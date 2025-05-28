@@ -1,51 +1,131 @@
 // src/pages/Clientes.js
 import React, { useState } from 'react';
+import ApiClient from '../components/api'; // <<-- Certifique-se que este caminho está correto. Se 'api.js' está na mesma pasta, use './api'. Se está em 'src/utils/api.js', use '../utils/api'.
 
 function Clientes() {
-  const [clientes, setClientes] = useState([
-    { id: 1, nome: 'João Silva', cpf: '123.456.789-00', telefone: '(11) 99999-9999' },
-    { id: 2, nome: 'Maria Oliveira', cpf: '987.654.321-00', telefone: '(21) 88888-8888' },
-  ]);
+  const [clientes, setClientes] = useState([]);
   const [nome, setNome] = useState('');
   const [cpf, setCpf] = useState('');
   const [telefone, setTelefone] = useState('');
   const [editId, setEditId] = useState(null);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (editId) {
-      // Editar cliente
-      setClientes(
-        clientes.map((cliente) =>
-          cliente.id === editId ? { ...cliente, nome, cpf, telefone } : cliente
-        )
-      );
-      setEditId(null);
-    } else {
-      // Adicionar cliente
-      const novoCliente = {
-        id: clientes.length + 1,
-        nome,
-        cpf,
-        telefone,
-      };
-      setClientes([...clientes, novoCliente]);
+  const fetchClientes = async () => {
+    try {
+      const response = await ApiClient.clientes.getAll();
+      setClientes(response.data);
+    } catch (error) {
+      console.error('Erro ao buscar clientes:', error.response ? error.response.data : error);
+      alert('Erro ao buscar clientes.');
     }
-    // Limpar formulário
-    setNome('');
-    setCpf('');
-    setTelefone('');
+  };
+
+  React.useEffect(() => {
+    fetchClientes();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const cleanedCpf = cpf.replace(/\D/g, ''); // Remove tudo que não é dígito
+    if (cleanedCpf.length !== 11) {
+      alert('CPF deve conter exatamente 11 dígitos.');
+      return;
+    }
+
+    const cleanedTelefone = telefone.replace(/\D/g, ''); // Remove tudo que não é dígito
+    // Para ser compatível com um backend que aceita 8 a 11 dígitos,
+    // podemos enviar o número limpo. A validação de comprimento mais precisa
+    // pode ser feita no backend, ou aqui se houver uma regra mais estrita (ex: apenas 9 ou 11).
+    if (cleanedTelefone.length < 8 || cleanedTelefone.length > 11) {
+        alert('Telefone inválido. Deve conter entre 8 e 11 dígitos numéricos.');
+        return;
+    }
+
+    const clienteData = {
+      nome,
+      cpf: cleanedCpf,
+      telefone: cleanedTelefone, // Envia o número limpo e sem o slice(-9)
+    };
+
+    try {
+      if (editId) {
+        await ApiClient.clientes.update(editId, clienteData);
+        alert('Cliente atualizado com sucesso!');
+      } else {
+        await ApiClient.clientes.create(clienteData);
+        alert('Cliente adicionado com sucesso!');
+      }
+      setNome('');
+      setCpf('');
+      setTelefone('');
+      setEditId(null);
+      fetchClientes();
+    } catch (error) {
+      console.error('Erro ao salvar cliente:', error.response ? error.response.data : error);
+      const errorMessage = error.response && error.response.data && error.response.data.erro
+        ? error.response.data.erro
+        : 'Erro ao salvar cliente. Verifique o console para mais detalhes.';
+      alert(errorMessage);
+    }
   };
 
   const handleEdit = (cliente) => {
     setNome(cliente.nome);
-    setCpf(cliente.cpf);
-    setTelefone(cliente.telefone);
+    // Assegura que o CPF e telefone sejam formatados para exibição
+    setCpf(formatCpf(cliente.cpf));
+    setTelefone(formatTelefone(cliente.telefone));
     setEditId(cliente.id);
   };
 
-  const handleDelete = (id) => {
-    setClientes(clientes.filter((cliente) => cliente.id !== id));
+  const handleDelete = async (id) => {
+    if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
+      try {
+        await ApiClient.clientes.delete(id);
+        alert('Cliente excluído com sucesso!');
+        fetchClientes();
+      } catch (error) {
+        console.error('Erro ao excluir cliente:', error.response ? error.response.data : error);
+        alert('Erro ao excluir cliente.');
+      }
+    }
+  };
+
+  const formatCpf = (value) => {
+    if (!value) return '';
+    value = String(value).replace(/\D/g, ''); // Garante que é string antes de replace
+    if (value.length > 9) {
+      return value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    } else if (value.length > 6) {
+      return value.replace(/(\d{3})(\d{3})(\d{3})/, '$1.$2.$3');
+    } else if (value.length > 3) {
+      return value.replace(/(\d{3})(\d{3})/, '$1.$2');
+    }
+    return value;
+  };
+
+  const formatTelefone = (value) => {
+    if (!value) return '';
+    value = String(value).replace(/\D/g, ''); // Garante que é string antes de replace
+    if (value.length === 11) { // Ex: (XX) XXXXX-XXXX
+      return value.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+    } else if (value.length === 10) { // Ex: (XX) XXXX-XXXX
+      return value.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
+    } else if (value.length === 9) { // Ex: XXXXX-XXXX (sem DDD)
+      return value.replace(/(\d{5})(\d{4})/, '$1-$2');
+    } else if (value.length === 8) { // Ex: XXXX-XXXX (sem DDD e com 8 dígitos)
+        return value.replace(/(\d{4})(\d{4})/, '$1-$2');
+    }
+    return value;
+  };
+
+  const handleCpfChange = (e) => {
+    const value = e.target.value;
+    setCpf(formatCpf(value));
+  };
+
+  const handleTelefoneChange = (e) => {
+    const value = e.target.value;
+    setTelefone(formatTelefone(value));
   };
 
   return (
@@ -72,7 +152,8 @@ function Clientes() {
                   type="text"
                   className="form-control"
                   value={cpf}
-                  onChange={(e) => setCpf(e.target.value)}
+                  onChange={handleCpfChange}
+                  maxLength="14" // Para 999.999.999-99
                   required
                 />
               </div>
@@ -82,7 +163,8 @@ function Clientes() {
                   type="text"
                   className="form-control"
                   value={telefone}
-                  onChange={(e) => setTelefone(e.target.value)}
+                  onChange={handleTelefoneChange}
+                  maxLength="15" // Ex: (99) 99999-9999
                   required
                 />
               </div>
@@ -122,8 +204,8 @@ function Clientes() {
                 {clientes.map((cliente) => (
                   <tr key={cliente.id}>
                     <td>{cliente.nome}</td>
-                    <td>{cliente.cpf}</td>
-                    <td>{cliente.telefone}</td>
+                    <td>{formatCpf(cliente.cpf)}</td>
+                    <td>{formatTelefone(cliente.telefone)}</td>
                     <td>
                       <button
                         className="btn btn-sm btn-warning me-2"

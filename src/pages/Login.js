@@ -1,30 +1,28 @@
+// src/pages/Login.js
 import React, { useState } from 'react';
-import axios from 'axios'; // Adicionando o Axios
 import { useNavigate } from 'react-router-dom';
-import 'bootstrap/dist/css/bootstrap.min.css';
-import '../App.css';
-import './Login.css'; // Seu estilo, se tiver
+import ApiClient from '../components/api'; // <--- Importa o ApiClient
+import './Login.css';
 
 function Login() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setErro('');
+
     try {
-      const response = await axios.post('http://localhost:5000/login', {
-        email,
-        senha,
-      }, {
-        headers: { 'Content-Type': 'application/json' }, // Mantendo o header
-      });
-      if (response.status === 200) {
-        navigate('/dashboard');
-      }
-    } catch (error) {
-      console.error('Erro no login:', error);
-      alert('Email ou senha inválidos!');
+      // Usa o ApiClient.auth.login
+      const response = await ApiClient.auth.login({ email, senha });
+      const { access_token } = response.data;
+      localStorage.setItem('token', access_token); // Guarda o token
+      navigate('/dashboard'); // Redireciona para o dashboard ou outra página principal
+    } catch (err) {
+      console.error('Erro de login:', err);
+      setErro(err.response?.data?.erro || 'Erro ao fazer login. Verifique suas credenciais.');
     }
   };
 
