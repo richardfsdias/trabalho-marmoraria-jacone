@@ -1,8 +1,8 @@
-"""Banco de Dados
+"""Banco de dados
 
-Revision ID: a3484ac82c9e
+Revision ID: 26a2036d321c
 Revises: 
-Create Date: 2025-05-28 14:18:19.306752
+Create Date: 2025-05-29 16:55:16.894205
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'a3484ac82c9e'
+revision = '26a2036d321c'
 down_revision = None
 branch_labels = None
 depends_on = None

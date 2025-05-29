@@ -35,36 +35,57 @@ const ApiClient = {
         },
         cadastro: (userData) => api.post('/funcionarios/cadastro', userData),
     },
-    clientes: {
+    // ... (Seus outros módulos como clientes, funcionarios, estoque, etc. já devem estar aqui ou você adicionará)
+
+    clientes: { // Módulo de clientes para buscar clientes no formulário de orçamento
         getAll: () => api.get('/clientes'),
         getById: (id) => api.get(`/clientes/${id}`),
-        create: (clienteData) => {
-            console.log("DEBUG FRONTEND - Enviando dados do cliente para criação:", clienteData); // Log para depuração
-            return api.post('/clientes', clienteData);
-        },
-        update: (id, clienteData) => {
-            console.log(`DEBUG FRONTEND - Enviando dados do cliente para atualização (ID: ${id}):`, clienteData); // Log para depuração
-            return api.put(`/clientes/${id}`, clienteData);
-        },
+        create: (clienteData) => api.post('/clientes', clienteData),
+        update: (id, clienteData) => api.put(`/clientes/${id}`, clienteData),
         delete: (id) => api.delete(`/clientes/${id}`),
     },
     
     marmores: {
         getAll: () => api.get('/marmores'),
-        getById: (id) => api.get(`/marmores/${id}`),
-        create: (marmoreData) => api.post('/marmores', marmoreData),
-        update: (id, marmoreData) => api.put(`/marmores/${id}`, marmoreData),
-        delete: (id) => api.delete(`/marmores/${id}`),
+        getById: (id) => api.get(`/marmores/${id}`), // Embora não usado em Marmores.js, bom para completude
+        create: (marmoreData) => {
+            console.log("DEBUG FRONTEND - Enviando dados do mármore para criação:", marmoreData);
+            return api.post('/marmores', marmoreData);
+        },
+        update: (id, marmoreData) => {
+            console.log("DEBUG FRONTEND - Enviando dados do mármore para atualização:", id, marmoreData);
+            return api.put(`/marmores/${id}`, marmoreData);
+        },
+        delete: (id) => {
+            console.log("DEBUG FRONTEND - Enviando solicitação para deletar mármore:", id);
+            return api.delete(`/marmores/${id}`);
+        },
     },
 
-    orcamentos: {
+    estoque: { // Módulo de estoque para buscar materiais na calculadora
+        getAll: () => api.get('/estoque'),
+        getById: (id) => api.get(`/estoque/${id}`),
+        create: (itemData) => api.post('/estoque', itemData),
+        update: (id, itemData) => api.put(`/estoque/${id}`, itemData),
+        delete: (id) => api.delete(`/estoque/${id}`),
+         //Adicione Movimentacoes_Estoque se ainda não tiver
+        movimentacoes: (item_id, movimentacaoData) => api.post(`/estoque/${item_id}/movimentar`, movimentacaoData),
+        getAllMovimentacoes: () => api.get('/movimentacoes-estoque'),
+    },
+
+    orcamentos: { // Novo módulo para orçamentos
         getAll: () => api.get('/orcamentos'),
         getById: (id) => api.get(`/orcamentos/${id}`),
-        create: (orcamentoData) => api.post('/orcamentos', orcamentoData),
-        update: (id, orcamentoData) => api.put(`/orcamentos/${id}`, orcamentoData),
+        create: (orcamentoData) => {
+            console.log("DEBUG FRONTEND - Enviando dados do orçamento para criação:", orcamentoData);
+            return api.post('/orcamentos', orcamentoData);
+        },
+        update: (id, orcamentoData) => {
+            console.log("DEBUG FRONTEND - Enviando dados do orçamento para atualização:", orcamentoData);
+            return api.put(`/orcamentos/${id}`, orcamentoData);
+        },
         delete: (id) => api.delete(`/orcamentos/${id}`),
-        updateStatus: (id, statusData) => api.put(`/orcamentos/${id}/status`, statusData),
-        getApproved: () => api.get('/notas'),
+        updateStatus: (id, status) => api.put(`/orcamentos/${id}/status`, { status }),
     },
 
     calculadora: {
@@ -76,14 +97,6 @@ const ApiClient = {
         getById: (id) => api.get(`/funcionarios/${id}`),
         update: (id, funcData) => api.put(`/funcionarios/${id}`, funcData),
         delete: (id) => api.delete(`/funcionarios/${id}`),
-    },
-
-    estoque: {
-        getAll: () => api.get('/estoque'),
-        getById: (id) => api.get(`/estoque/${id}`),
-        create: (itemData) => api.post('/estoque', itemData),
-        update: (id, itemData) => api.put(`/estoque/${id}`, itemData),
-        delete: (id) => api.delete(`/estoque/${id}`),
     },
 
     movimentacoes: {
