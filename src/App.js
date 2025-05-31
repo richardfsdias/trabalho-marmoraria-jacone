@@ -9,9 +9,10 @@ import Login from './pages/Login';
 // import Notas from './pages/Notas';
 import Clientes from './pages/Clientes';
 import Marmores from './pages/Marmores';
-import Movimentacoes from './pages/Movimentacoes';
+//import Movimentacoes from './pages/Movimentacoes';
 import Orcamentos from './pages/Orcamentos';
 import Cadastro from './pages/Cadastro';
+
 
 function App() {
   return (
@@ -53,14 +54,14 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
+          {/*<Route
             path="/movimentacoes"
             element={
               <ProtectedRoute>
                 <Movimentacoes />
               </ProtectedRoute>
             }
-          />
+          />*/}
           <Route path="/" element={<Login />} />
         </Routes>
       </div>

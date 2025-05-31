@@ -190,22 +190,25 @@ class Entregas(db.Model):
         }
 
 class Estoque(db.Model):
+    __tablename__ = 'estoque'
     id = db.Column(db.Integer, primary_key=True)
-    nome_item = db.Column(db.String(100), nullable=False)
-    tipo = db.Column(db.String(50), nullable=False)
-    quantidade = db.Column(db.Numeric(10, 2), nullable=False)
-    unidade_medida = db.Column(db.String(20), nullable=False) # Corrigido de 'unidade_media'
-    preco_unitario = db.Column(db.Numeric(10, 2), nullable=False)
-    data_atualizacao = db.Column(db.TIMESTAMP, default=db.func.current_timestamp())
+    nome = db.Column(db.String(100), nullable=False)
+    quantidade = db.Column(db.Float, nullable=False)
+    unidade_medida = db.Column(db.String(20), nullable=False)
+    preco_unitario = db.Column(db.Float, nullable=False)
+    # tipo = db.Column(db.String(50), nullable=True) # REMOVA OU COMENTE ESTA LINHA
+    data_cadastro = db.Column(db.DateTime, default=db.func.current_timestamp())
+    data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
     def serialize(self):
         return {
             'id': self.id,
-            'nome_item': self.nome_item,
-            'tipo': self.tipo,
+            'nome': self.nome,
             'quantidade': float(self.quantidade),
             'unidade_medida': self.unidade_medida,
             'preco_unitario': float(self.preco_unitario),
+            # 'tipo': self.tipo, # REMOVA OU COMENTE ESTA LINHA
+            'data_cadastro': self.data_cadastro.isoformat(),
             'data_atualizacao': self.data_atualizacao.isoformat()
         }
 
@@ -229,6 +232,58 @@ class Movimentacoes_Estoque(db.Model):
             'data_movimentacao': self.data_movimentacao.isoformat(),
             'observacoes': self.observacoes
         }
+    
+class Orcamentos(db.Model):
+    __tablename__ = 'orcamentos'
+    id = db.Column(db.Integer, primary_key=True)
+    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    data_criacao = db.Column(db.DateTime, default=db.func.current_timestamp())
+    data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    total_orcamento = db.Column(db.Float, nullable=False)
+    observacoes = db.Column(db.String(500))
+    status = db.Column(Enum('Pendente', 'Aprovado', 'Rejeitado', name='orcamento_status'), default='Pendente')
+
+    # Relacionamento com Cliente
+    cliente = db.relationship('Clientes', backref='orcamentos_rel')
+    # Relacionamento com ItensOrcamento
+    itens = db.relationship('ItensOrcamento', backref='orcamento', cascade='all, delete-orphan', lazy=True) # Adicionado
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'cliente_id': self.cliente_id,
+            'nome_cliente': self.cliente.nome, # Adicionado para facilitar no frontend
+            'data_criacao': self.data_criacao.isoformat(),
+            'data_atualizacao': self.data_atualizacao.isoformat(),
+            'total_orcamento': float(self.total_orcamento), # Garante que é float para JSON
+            'observacoes': self.observacoes,
+            'status': self.status,
+            'itens': [item.serialize() for item in self.itens] # Inclui os itens do orçamento
+        }
+
+class ItensOrcamento(db.Model):
+    __tablename__ = 'itens_orcamento'
+    id = db.Column(db.Integer, primary_key=True)
+    orcamento_id = db.Column(db.Integer, db.ForeignKey('orcamentos.id'), nullable=False)
+    item_estoque_id = db.Column(db.Integer, db.ForeignKey('estoque.id'), nullable=False)
+    quantidade = db.Column(db.Float, nullable=False)
+    preco_unitario_no_orcamento = db.Column(db.Float, nullable=False) # Preço do item no momento da criação do orçamento
+
+    # Relacionamento com Estoque para obter o nome do item
+    item_estoque = db.relationship('Estoque', backref='itens_orcamento_rel')
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'orcamento_id': self.orcamento_id,
+            'item_estoque_id': self.item_estoque_id,
+            # Garanta que self.item_estoque existe e tem 'nome' e 'unidade_medida'
+            'nome_item': self.item_estoque.nome, # <-- Aqui o erro estava acontecendo
+            'unidade_medida': self.item_estoque.unidade_medida, # <-- E aqui
+            'quantidade': self.quantidade,
+            'preco_unitario_no_orcamento': float(self.preco_unitario_no_orcamento)
+        }
+    
 
 
 # Rotas da API
@@ -526,7 +581,7 @@ def delete_marmore(id):
 @jwt_required()
 def get_orcamentos():
     try:
-        orcamentos = Pedidos.query.all()
+        orcamentos = Orcamentos.query.all()
         return jsonify([orcamento.serialize() for orcamento in orcamentos]), 200
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
@@ -535,42 +590,70 @@ def get_orcamentos():
 @jwt_required()
 def get_orcamento(id):
     try:
-        orcamento = Pedidos.query.get(id)
+        orcamento = Orcamentos.query.get(id)
         if not orcamento:
-            return jsonify({"erro": "Orçamento não encontrado"}), 404
+            return jsonify({"erro": "Orçamento não encontrado."}), 404
         return jsonify(orcamento.serialize()), 200
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
 
 @app.route('/orcamentos', methods=['POST'])
 @jwt_required()
-def add_orcamento():
+def create_orcamento():
     data = request.get_json()
     cliente_id = data.get('cliente_id')
-    tipo_marmore_nome = data.get('tipo_marmore') # Nome do mármore
-    metragem = data.get('metragem')
-    status = data.get('status', 'Pendente') # Default status
+    observacoes = data.get('observacoes')
+    itens_orcamento_data = data.get('itens', []) # Lista de dicionários para os itens
 
-    if not all([cliente_id, tipo_marmore_nome, metragem is not None]):
-        return jsonify({"erro": "Cliente, tipo de mármore e metragem são obrigatórios."}), 400
+    if not cliente_id or not itens_orcamento_data:
+        return jsonify({"erro": "Cliente e itens do orçamento são obrigatórios."}), 400
 
     try:
-        marmore = Marmores.query.filter_by(nome=tipo_marmore_nome).first()
-        if not marmore:
-            return jsonify({"erro": "Tipo de mármore não encontrado no estoque."}), 404
+        # Verifica se o cliente existe
+        cliente = Clientes.query.get(cliente_id)
+        if not cliente:
+            return jsonify({"erro": "Cliente não encontrado."}), 404
 
-        preco_total = float(marmore.preco_m2) * float(metragem)
+        total_orcamento_calculado = 0
+        novos_itens_orcamento = []
 
-        novo_orcamento = Pedidos(
+        for item_data in itens_orcamento_data:
+            item_estoque_id = item_data.get('item_estoque_id')
+            quantidade = item_data.get('quantidade')
+            preco_unitario = item_data.get('preco_unitario_no_orcamento') # Recebe o preço calculado do frontend
+
+            if not item_estoque_id or not quantidade or not preco_unitario:
+                db.session.rollback()
+                return jsonify({"erro": "Todos os itens do orçamento devem ter item_estoque_id, quantidade e preco_unitario_no_orcamento."}), 400
+
+            # Verifica se o item de estoque existe
+            item_estoque = Estoque.query.get(item_estoque_id)
+            if not item_estoque:
+                db.session.rollback()
+                return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
+
+            # O preço unitário já vem do frontend, que deve tê-lo obtido do estoque no momento da adição do item
+            # Aqui, apenas o utilizamos para o cálculo do total e para armazenar
+            total_item = float(quantidade) * float(preco_unitario)
+            total_orcamento_calculado += total_item
+
+            novo_item = ItensOrcamento(
+                item_estoque_id=item_estoque_id,
+                quantidade=float(quantidade),
+                preco_unitario_no_orcamento=float(preco_unitario)
+            )
+            novos_itens_orcamento.append(novo_item)
+
+        nova_orcamento = Orcamentos(
             cliente_id=cliente_id,
-            tipo_marmore=tipo_marmore_nome,
-            metragem=float(metragem),
-            preco_total=preco_total,
-            status=status
+            observacoes=observacoes,
+            total_orcamento=total_orcamento_calculado,
+            itens=novos_itens_orcamento # Adiciona os itens ao orçamento
         )
-        db.session.add(novo_orcamento)
+
+        db.session.add(nova_orcamento)
         db.session.commit()
-        return jsonify(novo_orcamento.serialize()), 201
+        return jsonify(nova_orcamento.serialize()), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({"erro": str(e)}), 500
@@ -578,27 +661,84 @@ def add_orcamento():
 @app.route('/orcamentos/<int:id>', methods=['PUT'])
 @jwt_required()
 def update_orcamento(id):
+    orcamento = Orcamentos.query.get(id)
+    if not orcamento:
+        return jsonify({"erro": "Orçamento não encontrado."}), 404
+
+    data = request.get_json()
+    cliente_id = data.get('cliente_id')
+    observacoes = data.get('observacoes')
+    status = data.get('status')
+    itens_orcamento_data = data.get('itens', [])
+
     try:
-        orcamento = Pedidos.query.get(id)
-        if not orcamento:
-            return jsonify({"erro": "Orçamento não encontrado"}), 404
+        if cliente_id:
+            cliente = Clientes.query.get(cliente_id)
+            if not cliente:
+                return jsonify({"erro": "Cliente não encontrado."}), 404
+            orcamento.cliente_id = cliente_id
+        if observacoes is not None:
+            orcamento.observacoes = observacoes
+        if status:
+            if status not in ['Pendente', 'Aprovado', 'Rejeitado']:
+                return jsonify({"erro": "Status inválido. Use 'Pendente', 'Aprovado' ou 'Rejeitado'."}), 400
+            orcamento.status = status
 
-        data = request.get_json()
-        orcamento.cliente_id = data.get('cliente_id', orcamento.cliente_id)
-        orcamento.tipo_marmore = data.get('tipo_marmore', orcamento.tipo_marmore)
-        orcamento.metragem = float(data.get('metragem', orcamento.metragem))
-        orcamento.status = data.get('status', orcamento.status)
+        # Atualiza os itens do orçamento
+        if itens_orcamento_data is not None:
+            # Remove itens antigos
+            for item in orcamento.itens:
+                db.session.delete(item)
+            db.session.flush() # Garante que os itens deletados são removidos da sessão
 
-        # Recalcular preco_total se metragem ou tipo_marmore mudar
-        if 'metragem' in data or 'tipo_marmore' in data:
-            marmore = Marmores.query.filter_by(nome=orcamento.tipo_marmore).first()
-            if marmore:
-                orcamento.preco_total = float(marmore.preco_m2) * orcamento.metragem
-            else:
-                return jsonify({"erro": "Tipo de mármore não encontrado para recalcular preço."}), 404
+            total_orcamento_recalculado = 0
+            novos_itens_orcamento = []
+
+            for item_data in itens_orcamento_data:
+                item_estoque_id = item_data.get('item_estoque_id')
+                quantidade = item_data.get('quantidade')
+                preco_unitario = item_data.get('preco_unitario_no_orcamento')
+
+                if not item_estoque_id or not quantidade or not preco_unitario:
+                    db.session.rollback()
+                    return jsonify({"erro": "Todos os itens do orçamento devem ter item_estoque_id, quantidade e preco_unitario_no_orcamento."}), 400
+
+                item_estoque = Estoque.query.get(item_estoque_id)
+                if not item_estoque:
+                    db.session.rollback()
+                    return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
+
+                total_item = float(quantidade) * float(preco_unitario)
+                total_orcamento_recalculado += total_item
+
+                novo_item = ItensOrcamento(
+                    item_estoque_id=item_estoque_id,
+                    quantidade=float(quantidade),
+                    preco_unitario_no_orcamento=float(preco_unitario),
+                    orcamento=orcamento # Associa ao orçamento existente
+                )
+                novos_itens_orcamento.append(novo_item)
+
+            orcamento.itens = novos_itens_orcamento
+            orcamento.total_orcamento = total_orcamento_recalculado
 
         db.session.commit()
         return jsonify(orcamento.serialize()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"erro": str(e)}), 500
+
+@app.route('/orcamentos/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_orcamento(id):
+    try:
+        orcamento = Orcamentos.query.get(id)
+        if not orcamento:
+            return jsonify({"erro": "Orçamento não encontrado."}), 404
+
+        db.session.delete(orcamento) # O cascade 'all, delete-orphan' cuidará dos ItensOrcamento
+        db.session.commit()
+        return jsonify({"mensagem": "Orçamento excluído com sucesso."}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"erro": str(e)}), 500
@@ -606,38 +746,52 @@ def update_orcamento(id):
 @app.route('/orcamentos/<int:id>/status', methods=['PUT'])
 @jwt_required()
 def update_orcamento_status(id):
+    orcamento = Orcamentos.query.get(id)
+    if not orcamento:
+        return jsonify({"erro": "Orçamento não encontrado."}), 404
+
+    data = request.get_json()
+    status = data.get('status')
+
+    if not status:
+        return jsonify({"erro": "Status é obrigatório."}), 400
+
+    if status not in ['Pendente', 'Aprovado', 'Rejeitado']:
+        return jsonify({"erro": "Status inválido. Use 'Pendente', 'Aprovado' ou 'Rejeitado'."}), 400
+
     try:
-        orcamento = Pedidos.query.get(id)
-        if not orcamento:
-            return jsonify({"erro": "Orçamento não encontrado"}), 404
+        # Lógica para movimentação de estoque APENAS se o status mudar para 'Aprovado'
+        if status == 'Aprovado' and orcamento.status != 'Aprovado':
+            for item_orcamento in orcamento.itens:
+                item_estoque = Estoque.query.get(item_orcamento.item_estoque_id)
+                if not item_estoque:
+                    db.session.rollback()
+                    return jsonify({"erro": f"Item de estoque {item_orcamento.item_estoque_id} não encontrado para movimentação."}), 404
 
-        data = request.get_json()
-        novo_status = data.get('status')
-        if not novo_status:
-            return jsonify({"erro": "Status é obrigatório."}), 400
+                if item_estoque.quantidade < item_orcamento.quantidade:
+                    db.session.rollback()
+                    return jsonify({"erro": f"Quantidade insuficiente em estoque para o item '{item_estoque.nome}'. Disponível: {item_estoque.quantidade}, Necessário: {item_orcamento.quantidade}"}), 400
 
-        # Valide se o novo status é um dos valores permitidos no Enum
-        if novo_status not in ['Pendente', 'Aprovado', 'Rejeitado', 'Concluído']:
-            return jsonify({"erro": "Status inválido."}), 400
+                # Cria uma movimentação de saída
+                nova_movimentacao = Movimentacoes_Estoque(
+                    item_id=item_estoque.id,
+                    tipo_movimentacao='Saída',
+                    quantidade=item_orcamento.quantidade,
+                    observacoes=f"Saída por aprovação do Orçamento #{orcamento.id}"
+                )
+                db.session.add(nova_movimentacao)
 
-        orcamento.status = novo_status
+                # Atualiza a quantidade do item no estoque
+                item_estoque.quantidade -= item_orcamento.quantidade
+                item_estoque.data_atualizacao = db.func.current_timestamp()
+
+        # Se o status mudar de Aprovado para outro (ex: Rejeitado ou Pendente), reverter o estoque?
+        # Esta é uma decisão de negócio. Por simplicidade, não faremos a reversão automática aqui.
+        # Caso precise, você pode adicionar a lógica de "Entrada" reversa aqui.
+
+        orcamento.status = status
         db.session.commit()
         return jsonify(orcamento.serialize()), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"erro": str(e)}), 500
-
-
-@app.route('/orcamentos/<int:id>', methods=['DELETE'])
-@jwt_required()
-def delete_orcamento(id):
-    try:
-        orcamento = Pedidos.query.get(id)
-        if not orcamento:
-            return jsonify({"erro": "Orçamento não encontrado"}), 404
-        db.session.delete(orcamento)
-        db.session.commit()
-        return jsonify({"message": "Orçamento excluído com sucesso"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"erro": str(e)}), 500
@@ -656,48 +810,55 @@ def listar_estoque():
 @jwt_required()
 def add_estoque_item():
     data = request.get_json()
-    nome_item = data.get('nome_item')
-    tipo = data.get('tipo')
-    quantidade = data.get('quantidade')
-    unidade_medida = data.get('unidade_medida') # Corrigido para unidade_medida
-    preco_unitario = data.get('preco_unitario')
+    # Certifique-se de que todos os campos obrigatórios estão presentes
+    if not all(k in data for k in ['nome', 'quantidade', 'unidade_medida', 'preco_unitario']):
+        return jsonify({'erro': 'Nome, quantidade, unidade de medida e preço unitário são obrigatórios.'}), 400
 
-    if not all([nome_item, tipo, quantidade is not None, unidade_medida, preco_unitario is not None]):
-        return jsonify({"erro": "Todos os campos são obrigatórios."}), 400
     try:
         novo_item = Estoque(
-            nome_item=nome_item,
-            tipo=tipo,
-            quantidade=float(quantidade),
-            unidade_medida=unidade_medida,
-            preco_unitario=float(preco_unitario)
+            nome=data['nome'],
+            quantidade=float(data['quantidade']),
+            unidade_medida=data['unidade_medida'],
+            preco_unitario=float(data['preco_unitario']),
+            # tipo=data.get('tipo', None) # REMOVA OU COMENTE ESTA LINHA
         )
         db.session.add(novo_item)
         db.session.commit()
         return jsonify(novo_item.serialize()), 201
+    except ValueError:
+        db.session.rollback()
+        return jsonify({'erro': 'Quantidade ou preço unitário inválidos.'}), 400
+    except IntegrityError as e:
+        db.session.rollback()
+        return jsonify({'erro': f'Erro de integridade: {str(e)}'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({"erro": str(e)}), 500
+        return jsonify({'erro': str(e)}), 500
 
-@app.route('/estoque/<int:id>', methods=['PUT'])
+
+# Rota para atualizar um item do estoque
+@app.route('/estoque/<int:item_id>', methods=['PUT'])
 @jwt_required()
-def update_estoque_item(id):
+def update_estoque_item(item_id):
+    item = Estoque.query.get_or_404(item_id)
+    data = request.get_json()
+
     try:
-        item = Estoque.query.get(id)
-        if not item:
-            return jsonify({"erro": "Item de estoque não encontrado"}), 404
-        data = request.get_json()
-        item.nome_item = data.get('nome_item', item.nome_item)
-        item.tipo = data.get('tipo', item.tipo)
+        item.nome = data.get('nome', item.nome)
         item.quantidade = float(data.get('quantidade', item.quantidade))
-        item.unidade_medida = data.get('unidade_medida', item.unidade_medida) # Corrigido
+        item.unidade_medida = data.get('unidade_medida', item.unidade_medida)
         item.preco_unitario = float(data.get('preco_unitario', item.preco_unitario))
-        item.data_atualizacao = db.func.current_timestamp() # Atualiza data de modificação
+        # item.tipo = data.get('tipo', item.tipo) # REMOVA OU COMENTE ESTA LINHA
+        item.data_atualizacao = db.func.current_timestamp()
+
         db.session.commit()
         return jsonify(item.serialize()), 200
+    except ValueError:
+        db.session.rollback()
+        return jsonify({'erro': 'Quantidade ou preço unitário inválidos.'}), 400
     except Exception as e:
         db.session.rollback()
-        return jsonify({"erro": str(e)}), 500
+        return jsonify({'erro': str(e)}), 500
 
 @app.route('/estoque/<int:id>', methods=['DELETE'])
 @jwt_required()

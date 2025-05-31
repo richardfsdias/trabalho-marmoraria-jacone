@@ -62,15 +62,16 @@ const ApiClient = {
         },
     },
 
-    estoque: { // Módulo de estoque para buscar materiais na calculadora
+     estoque: { 
         getAll: () => api.get('/estoque'),
         getById: (id) => api.get(`/estoque/${id}`),
         create: (itemData) => api.post('/estoque', itemData),
         update: (id, itemData) => api.put(`/estoque/${id}`, itemData),
         delete: (id) => api.delete(`/estoque/${id}`),
-         //Adicione Movimentacoes_Estoque se ainda não tiver
-        movimentacoes: (item_id, movimentacaoData) => api.post(`/estoque/${item_id}/movimentar`, movimentacaoData),
-        getAllMovimentacoes: () => api.get('/movimentacoes-estoque'),
+        
+        // Movimentações relacionadas ao estoque
+        getAllMovimentacoes: () => api.get('/movimentacoes_estoque'), // Corrigido para corresponder ao backend
+        createMovimentacao: (movimentacaoData) => api.post('/movimentacoes_estoque', movimentacaoData), // Adicionado
     },
 
     orcamentos: { // Novo módulo para orçamentos

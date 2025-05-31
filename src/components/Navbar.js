@@ -49,11 +49,11 @@ function Navbar() {
                 Mármores
               </Link>
             </li>
-            <li className="nav-item">
+            {/*<li className="nav-item">
               <Link className="nav-link" to="/movimentacoes">
                 Movimentações
               </Link>
-            </li>
+            </li>*/}
           </ul>
           <button className="btn btn-outline-light" onClick={handleLogout}>
             Sair

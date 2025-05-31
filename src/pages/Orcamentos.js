@@ -1,25 +1,22 @@
 // src/pages/Orcamentos.js
-import React, { useState, useEffect } from 'react';
-import ApiClient from '../components/api'; // Certifique-se de que o caminho está correto
+import React, { useState, useEffect, useCallback } from 'react';
+import ApiClient from '../components/api';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import '../App.css'; // Seu CSS customizado
+import '../App.css';
 
 function Orcamentos() {
-  const [orcamentos, setOrcamentos] = useState([]); // Lista de orçamentos carregados do backend
-  const [clientes, setClientes] = useState([]);     // Lista de clientes para o dropdown
-  const [materiais, setMateriais] = useState([]);   // Lista de materiais para a calculadora
+  const [orcamentos, setOrcamentos] = useState([]);
+  const [clientes, setClientes] = useState([]);
+  const [materiais, setMateriais] = useState([]);
 
-  // Estados para o formulário de criação/edição de orçamento
-  const [editId, setEditId] = useState(null); // ID do orçamento sendo editado (null para novo)
+  const [editId, setEditId] = useState(null);
   const [clienteSelecionadoId, setClienteSelecionadoId] = useState('');
   const [observacoes, setObservacoes] = useState('');
-  const [itensOrcamento, setItensOrcamento] = useState([]); // Itens adicionados ao orçamento atual
+  const [itensOrcamento, setItensOrcamento] = useState([]);
 
-  // Estados para a calculadora de itens
   const [materialSelecionadoCalc, setMaterialSelecionadoCalc] = useState('');
   const [quantidadeCalc, setQuantidadeCalc] = useState('');
 
-  // --- Funções de Formatação (Mantidas) ---
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -27,17 +24,12 @@ function Orcamentos() {
     }).format(value);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    // Certifique-se de que o formato da data do backend é compatível.
-    // Se o backend retornar 'YYYY-MM-DDTHH:MM:SS.sssZ', Date() funcionará.
-    // Se for apenas 'YYYY-MM-DD', talvez precise de new Date(dateString + 'T00:00:00')
+  const formatarData = (dataString) => {
     const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
-    return new Date(dateString).toLocaleDateString('pt-BR', options);
+    return new Date(dataString).toLocaleDateString('pt-BR', options);
   };
 
-  // --- Funções para Carregar Dados da API (Novas) ---
-  const fetchOrcamentos = async () => {
+  const fetchOrcamentos = useCallback(async () => {
     try {
       const response = await ApiClient.orcamentos.getAll();
       setOrcamentos(response.data);
@@ -45,96 +37,87 @@ function Orcamentos() {
       console.error('Erro ao buscar orçamentos:', error.response ? error.response.data : error);
       alert('Erro ao buscar orçamentos.');
     }
-  };
+  }, []);
 
-  const fetchClientes = async () => {
+  const fetchClientes = useCallback(async () => {
     try {
       const response = await ApiClient.clientes.getAll();
       setClientes(response.data);
     } catch (error) {
       console.error('Erro ao buscar clientes:', error.response ? error.response.data : error);
-      alert('Erro ao buscar clientes para o formulário.');
+      alert('Erro ao buscar clientes.');
     }
-  };
+  }, []);
 
-  const fetchMateriais = async () => {
+  const fetchMateriais = useCallback(async () => {
     try {
-      const response = await ApiClient.estoque.getAll(); // Supondo que 'estoque' é sua rota para materiais
+      const response = await ApiClient.estoque.getAll();
+      // REMOVIDO: Filtragem por tipo. Agora todos os itens do estoque são considerados "materiais"
       setMateriais(response.data);
     } catch (error) {
-      console.error('Erro ao buscar materiais do estoque:', error.response ? error.response.data : error);
-      alert('Erro ao buscar materiais do estoque.');
+      console.error('Erro ao buscar materiais:', error.response ? error.response.data : error);
+      alert('Erro ao buscar materiais.');
     }
-  };
+  }, []);
 
-  // --- Efeito para Carregar Dados ao Iniciar o Componente (Nova) ---
   useEffect(() => {
     fetchOrcamentos();
     fetchClientes();
     fetchMateriais();
-  }, []); // Array de dependências vazio para rodar apenas na montagem
+  }, [fetchOrcamentos, fetchClientes, fetchMateriais]);
 
-  // --- Lógica da Calculadora e Itens do Orçamento (Adaptada para API) ---
   const handleAddItem = () => {
-    if (!materialSelecionadoCalc || quantidadeCalc <= 0) {
-      alert('Selecione um material e insira uma quantidade válida.');
+    if (!materialSelecionadoCalc || !quantidadeCalc) {
+      alert('Selecione um material e insira a quantidade.');
       return;
     }
 
-    const materialExistente = materiais.find(
-      (m) => String(m.id) === String(materialSelecionadoCalc)
-    );
-
-    if (!materialExistente) {
+    const material = materiais.find(m => String(m.id) === String(materialSelecionadoCalc));
+    if (!material) {
       alert('Material selecionado não encontrado.');
       return;
     }
 
-    const newItem = {
-      material_id: materialExistente.id,
-      nome_material: materialExistente.nome_item, // Usar nome_item do estoque
-      quantidade: parseFloat(quantidadeCalc),
-      preco_unitario_no_orcamento: materialExistente.preco_unitario, // Captura o preço no momento do orçamento
-      total_item: parseFloat(quantidadeCalc) * materialExistente.preco_unitario,
-    };
-
-    // Verifica se o item já existe na lista de itens do orçamento
-    const itemJaAdicionado = itensOrcamento.find(
-      (item) => item.material_id === newItem.material_id
-    );
-
-    if (itemJaAdicionado) {
-      // Se existir, atualiza a quantidade e o total
-      setItensOrcamento(
-        itensOrcamento.map((item) =>
-          item.material_id === newItem.material_id
-            ? {
-                ...item,
-                quantidade: item.quantidade + newItem.quantidade,
-                total_item: item.total_item + newItem.total_item,
-              }
-            : item
-        )
-      );
-    } else {
-      // Caso contrário, adiciona um novo item
-      setItensOrcamento([...itensOrcamento, newItem]);
+    const quantidadeFloat = parseFloat(quantidadeCalc);
+    if (isNaN(quantidadeFloat) || quantidadeFloat <= 0) {
+      alert('Quantidade inválida. Insira um número positivo.');
+      return;
     }
 
-    // Limpa a calculadora
+    const precoUnitario = material.preco_unitario || 0;
+    const precoTotalItem = precoUnitario * quantidadeFloat;
+
+    const itemExistenteIndex = itensOrcamento.findIndex(item => item.item_estoque_id === material.id);
+
+    if (itemExistenteIndex !== -1) {
+      const updatedItens = [...itensOrcamento];
+      updatedItens[itemExistenteIndex].quantidade += quantidadeFloat;
+      updatedItens[itemExistenteIndex].total_item_calculado += precoTotalItem;
+      setItensOrcamento(updatedItens);
+    } else {
+      setItensOrcamento([
+        ...itensOrcamento,
+        {
+          item_estoque_id: material.id,
+          nome_item: material.nome,
+          unidade_medida: material.unidade_medida,
+          quantidade: quantidadeFloat,
+          preco_unitario_no_orcamento: precoUnitario,
+          total_item_calculado: precoTotalItem,
+        },
+      ]);
+    }
+
     setMaterialSelecionadoCalc('');
     setQuantidadeCalc('');
   };
 
-  const handleRemoveItem = (materialId) => {
-    setItensOrcamento(itensOrcamento.filter((item) => item.material_id !== materialId));
+  const handleRemoveItem = (index) => {
+    const updatedItens = [...itensOrcamento];
+    updatedItens.splice(index, 1);
+    setItensOrcamento(updatedItens);
   };
 
-  const calcularTotalGeral = () => {
-    return itensOrcamento.reduce((total, item) => total + item.total_item, 0);
-  };
-
-  // --- Lógica de Submissão do Formulário (Criar/Editar) (Nova) ---
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -143,82 +126,71 @@ function Orcamentos() {
       return;
     }
 
+    const total_orcamento_calculado = itensOrcamento.reduce((sum, item) => sum + item.total_item_calculado, 0);
+
     const orcamentoData = {
-      cliente_id: parseInt(clienteSelecionadoId),
-      observacoes,
+      cliente_id: clienteSelecionadoId,
+      observacoes: observacoes,
+      total_orcamento: total_orcamento_calculado,
       itens: itensOrcamento.map(item => ({
-        material_id: item.material_id,
+        item_estoque_id: item.item_estoque_id,
         quantidade: item.quantidade,
+        preco_unitario_no_orcamento: item.preco_unitario_no_orcamento,
       })),
-      // O total_orcamento será calculado no backend, não precisa enviar aqui
     };
 
     try {
       if (editId) {
-        // Atualizar orçamento existente
         await ApiClient.orcamentos.update(editId, orcamentoData);
         alert('Orçamento atualizado com sucesso!');
       } else {
-        // Criar novo orçamento
         await ApiClient.orcamentos.create(orcamentoData);
         alert('Orçamento criado com sucesso!');
       }
-      fetchOrcamentos(); // Recarregar a lista de orçamentos após sucesso
-      handleClearForm(); // Limpar o formulário
+      resetForm();
+      fetchOrcamentos();
     } catch (error) {
       console.error('Erro ao salvar orçamento:', error.response ? error.response.data : error);
-      alert('Erro ao salvar orçamento: ' + (error.response?.data?.erro || 'Erro desconhecido.'));
+      alert('Erro ao salvar orçamento: ' + (error.response?.data?.erro || error.message));
     }
   };
 
-  // --- Lógica de Edição (Nova) ---
   const handleEdit = (orcamento) => {
-    if (orcamento.status !== 'Pendente') {
-        alert('Não é possível editar orçamentos com status diferente de Pendente.');
-        return;
-    }
     setEditId(orcamento.id);
     setClienteSelecionadoId(orcamento.cliente_id);
-    setObservacoes(orcamento.observacoes || '');
-    // Mapear itens do orçamento para o formato do estado local, incluindo nome do material
-    const itensComNomeMaterial = orcamento.itens.map(item => ({
-        ...item,
-        // Encontra o nome do material na lista de materiais carregados
-        nome_material: materiais.find(m => m.id === item.material_id)?.nome_item || 'Material Desconhecido'
-    }));
-    setItensOrcamento(itensComNomeMaterial);
-    // Rola a página para o topo para que o usuário veja o formulário preenchido
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setObservacoes(orcamento.observacoes);
+    setItensOrcamento(orcamento.itens.map(item => ({
+      ...item,
+      total_item_calculado: item.quantidade * item.preco_unitario_no_orcamento,
+    })));
   };
 
-  // --- Lógica de Exclusão (Nova) ---
   const handleDelete = async (id) => {
     if (window.confirm('Tem certeza que deseja excluir este orçamento?')) {
       try {
         await ApiClient.orcamentos.delete(id);
         alert('Orçamento excluído com sucesso!');
-        fetchOrcamentos(); // Recarregar a lista
+        fetchOrcamentos();
       } catch (error) {
         console.error('Erro ao excluir orçamento:', error.response ? error.response.data : error);
-        alert('Erro ao excluir orçamento: ' + (error.response?.data?.erro || 'Erro desconhecido.'));
+        alert('Erro ao excluir orçamento: ' + (error.response?.data?.erro || error.message));
       }
     }
   };
 
-  // --- Lógica de Aprovação/Rejeição (Nova) ---
   const handleAprovar = async (orcamento) => {
     if (orcamento.status === 'Aprovado') {
-        alert('Este orçamento já está aprovado.');
-        return;
+      alert('Este orçamento já está aprovado.');
+      return;
     }
-    if (window.confirm('Tem certeza que deseja APROVAR este orçamento?')) {
+    if (window.confirm(`Tem certeza que deseja APROVAR o orçamento #${orcamento.id}? Isso registrará as saídas no estoque.`)) {
       try {
         await ApiClient.orcamentos.updateStatus(orcamento.id, 'Aprovado');
-        alert('Orçamento aprovado com sucesso!');
-        fetchOrcamentos(); // Recarregar a lista
+        alert('Orçamento aprovado e estoque atualizado com sucesso!');
+        fetchOrcamentos();
       } catch (error) {
         console.error('Erro ao aprovar orçamento:', error.response ? error.response.data : error);
-        alert('Erro ao aprovar orçamento: ' + (error.response?.data?.erro || 'Erro desconhecido.'));
+        alert('Erro ao aprovar orçamento: ' + (error.response?.data?.erro || error.message));
       }
     }
   };
@@ -228,16 +200,15 @@ function Orcamentos() {
       try {
         await ApiClient.orcamentos.updateStatus(id, 'Rejeitado');
         alert('Orçamento rejeitado com sucesso!');
-        fetchOrcamentos(); // Recarregar a lista
+        fetchOrcamentos();
       } catch (error) {
         console.error('Erro ao rejeitar orçamento:', error.response ? error.response.data : error);
-        alert('Erro ao rejeitar orçamento: ' + (error.response?.data?.erro || 'Erro desconhecido.'));
+        alert('Erro ao rejeitar orçamento: ' + (error.response?.data?.erro || error.message));
       }
     }
   };
 
-  // --- Limpar Formulário (Nova) ---
-  const handleClearForm = () => {
+  const resetForm = () => {
     setEditId(null);
     setClienteSelecionadoId('');
     setObservacoes('');
@@ -246,32 +217,27 @@ function Orcamentos() {
     setQuantidadeCalc('');
   };
 
-  // Usando orçamentos direto para o total, sem filtro por enquanto
   const orcamentosFiltrados = orcamentos;
 
-  // --- Estrutura JSX (Mesma que a sua original, apenas com dados dinâmicos) ---
   return (
-    <div className="container mt-5">
+    <div className="container mt-4">
       <h2 className="mb-4">Gerenciamento de Orçamentos</h2>
       <div className="row">
-        {/* Coluna do Formulário (Esquerda) */}
         <div className="col-md-4">
           <div className="card p-4 shadow-lg mb-4">
-            <h4>{editId ? 'Editar Orçamento' : 'Novo Orçamento'}</h4>
+            <h4>{editId ? 'Editar Orçamento' : 'Criar Novo Orçamento'}</h4>
             <form onSubmit={handleSubmit}>
               <div className="mb-3">
-                <label htmlFor="cliente" className="form-label">
-                  Cliente:
-                </label>
+                <label htmlFor="cliente" className="form-label">Cliente:</label>
                 <select
-                  className="form-control"
                   id="cliente"
+                  className="form-select"
                   value={clienteSelecionadoId}
                   onChange={(e) => setClienteSelecionadoId(e.target.value)}
                   required
                 >
                   <option value="">Selecione um cliente</option>
-                  {clientes.map((cliente) => (
+                  {clientes.map(cliente => (
                     <option key={cliente.id} value={cliente.id}>
                       {cliente.nome}
                     </option>
@@ -280,73 +246,39 @@ function Orcamentos() {
               </div>
 
               <div className="mb-3">
-                <label htmlFor="observacoes" className="form-label">
-                  Observações:
-                </label>
+                <label htmlFor="observacoes" className="form-label">Observações:</label>
                 <textarea
-                  className="form-control"
                   id="observacoes"
+                  className="form-control"
                   rows="3"
                   value={observacoes}
                   onChange={(e) => setObservacoes(e.target.value)}
                 ></textarea>
               </div>
 
-              <h5>Itens do Orçamento:</h5>
-              {itensOrcamento.length === 0 ? (
-                <p>Nenhum item adicionado ao orçamento.</p>
-              ) : (
-                <ul className="list-group mb-3">
-                  {itensOrcamento.map((item) => (
-                    <li
-                      key={item.material_id} // Use material_id como chave, é mais estável
-                      className="list-group-item d-flex justify-content-between align-items-center"
-                    >
-                      {item.nome_material} - {item.quantidade} m² (
-                      {formatCurrency(item.total_item)})
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleRemoveItem(item.material_id)}
-                      >
-                        Remover
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="fw-bold">
-                Total do Orçamento: {formatCurrency(calcularTotalGeral())}
-              </p>
-
-              <hr />
-              <h5>Adicionar Materiais:</h5>
+              <h5 className="mt-4">Adicionar Itens</h5>
               <div className="mb-3">
-                <label htmlFor="materialCalc" className="form-label">
-                  Material:
-                </label>
+                <label htmlFor="materialCalc" className="form-label">Material:</label>
                 <select
-                  className="form-control"
                   id="materialCalc"
+                  className="form-select"
                   value={materialSelecionadoCalc}
                   onChange={(e) => setMaterialSelecionadoCalc(e.target.value)}
                 >
                   <option value="">Selecione um material</option>
-                  {materiais.map((material) => (
+                  {materiais.map(material => (
                     <option key={material.id} value={material.id}>
-                      {material.nome_item} ({material.unidade_media} - {formatCurrency(material.preco_unitario)})
+                      {material.nome} ({material.unidade_medida}) - R$ {typeof material.preco_unitario === 'number' ? material.preco_unitario.toFixed(2) : 'N/A'}
                     </option>
                   ))}
                 </select>
               </div>
               <div className="mb-3">
-                <label htmlFor="quantidadeCalc" className="form-label">
-                  Quantidade ({materiais.find(m => String(m.id) === materialSelecionadoCalc)?.unidade_media || 'm²'}):
-                </label>
+                <label htmlFor="quantidadeCalc" className="form-label">Quantidade:</label>
                 <input
                   type="number"
-                  className="form-control"
                   id="quantidadeCalc"
+                  className="form-control"
                   value={quantidadeCalc}
                   onChange={(e) => setQuantidadeCalc(e.target.value)}
                   min="0.01"
@@ -355,20 +287,43 @@ function Orcamentos() {
               </div>
               <button
                 type="button"
-                className="btn btn-info mb-3 w-100"
+                className="btn btn-info btn-sm mb-3"
                 onClick={handleAddItem}
               >
-                Adicionar Material
+                Adicionar Item
               </button>
 
-              <button type="submit" className="btn btn-primary w-100 mt-3">
+              {itensOrcamento.length > 0 && (
+                <div className="mt-3">
+                  <h6>Itens do Orçamento:</h6>
+                  <ul className="list-group list-group-flush">
+                    {itensOrcamento.map((item, index) => (
+                      <li key={index} className="list-group-item d-flex justify-content-between align-items-center">
+                        {item.nome_item} - {item.quantidade} {item.unidade_medida} @ {formatCurrency(item.preco_unitario_no_orcamento)} = {formatCurrency(item.total_item_calculado)}
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm ms-2"
+                          onClick={() => handleRemoveItem(index)}
+                        >
+                          Remover
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="fw-bold mt-2">
+                    Total dos Itens: {formatCurrency(itensOrcamento.reduce((sum, item) => sum + item.total_item_calculado, 0))}
+                  </p>
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary mt-3 me-2">
                 {editId ? 'Atualizar Orçamento' : 'Criar Orçamento'}
               </button>
               {editId && (
                 <button
                   type="button"
-                  className="btn btn-secondary w-100 mt-2"
-                  onClick={handleClearForm}
+                  className="btn btn-secondary mt-3"
+                  onClick={resetForm}
                 >
                   Cancelar Edição
                 </button>
@@ -377,7 +332,6 @@ function Orcamentos() {
           </div>
         </div>
 
-        {/* Coluna da Tabela de Orçamentos (Direita) */}
         <div className="col-md-8">
           <div className="card p-4 shadow-lg">
             <h4>Lista de Orçamentos</h4>
@@ -386,7 +340,7 @@ function Orcamentos() {
                 <tr>
                   <th>ID</th>
                   <th>Cliente</th>
-                  <th>Data Criação</th>
+                  <th>Data</th>
                   <th>Total</th>
                   <th>Status</th>
                   <th>Ações</th>
@@ -396,42 +350,31 @@ function Orcamentos() {
                 {orcamentosFiltrados.map((orcamento) => (
                   <tr key={orcamento.id}>
                     <td>{orcamento.id}</td>
-                    <td>{orcamento.cliente_nome}</td> {/* Usar cliente_nome do serialize */}
-                    <td>{formatDate(orcamento.data_criacao)}</td>
-                    <td>{formatCurrency(orcamento.total_orcamento)}</td> {/* Usar total_orcamento */}
+                    <td>{orcamento.nome_cliente}</td>
+                    <td>{formatarData(orcamento.data_criacao)}</td>
+                    <td>{formatCurrency(orcamento.total_orcamento)}</td>
+                    <td><span className={`badge ${
+                      orcamento.status === 'Aprovado' ? 'bg-success' :
+                      orcamento.status === 'Rejeitado' ? 'bg-danger' : 'bg-warning text-dark'
+                    }`}>{orcamento.status}</span></td>
                     <td>
-                      <span
-                        className={`badge ${
-                          orcamento.status === 'Aprovado'
-                            ? 'bg-success'
-                            : orcamento.status === 'Rejeitado'
-                            ? 'bg-danger'
-                            : 'bg-warning text-dark'
-                        }`}
-                      >
-                        {orcamento.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="d-flex flex-column flex-md-row gap-2">
-                        {orcamento.status === 'Pendente' && (
-                          <button
-                            className="btn btn-sm btn-warning"
-                            onClick={() => handleEdit(orcamento)}
-                          >
-                            Editar
-                          </button>
-                        )}
+                      <div className="d-flex">
+                        <button
+                          className="btn btn-sm btn-warning me-2"
+                          onClick={() => handleEdit(orcamento)}
+                        >
+                          Editar
+                        </button>
                         {orcamento.status === 'Pendente' && (
                           <>
                             <button
-                              className="btn btn-sm btn-success"
+                              className="btn btn-sm btn-success me-2"
                               onClick={() => handleAprovar(orcamento)}
                             >
                               Aprovar
                             </button>
                             <button
-                              className="btn btn-sm btn-secondary"
+                              className="btn btn-sm btn-secondary me-2"
                               onClick={() => handleRejeitar(orcamento.id)}
                             >
                               Rejeitar

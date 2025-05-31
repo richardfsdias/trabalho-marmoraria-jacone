@@ -1,159 +1,204 @@
 // src/pages/Movimentacoes.js
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import '../App.css';
-
-// Dados fictícios (substituir pelo backend quando disponível)
-const marmores = [
-  { id: 1, nome: 'Verde Ubatuba', metros: 400, preco: 250 },
-  { id: 2, nome: 'Preto São Gabriel', metros: 600, preco: 280 },
-  { id: 3, nome: 'Branco Prime', metros: 1200, preco: 350 },
-  { id: 4, nome: 'Amarelo Icaraí', metros: 550, preco: 300 },
-  { id: 5, nome: 'Cinza Corumbar', metros: 380, preco: 220 },
-  { id: 6, nome: 'Cinza Ocre', metros: 400, preco: 240 },
-  { id: 7, nome: 'Preto Via Láctea', metros: 770, preco: 400 },
-  { id: 8, nome: 'Branco Itaúnas', metros: 900, preco: 370 },
-  { id: 9, nome: 'Ornamental', metros: 600, preco: 310 },
-  { id: 10, nome: 'Bege Bahia', metros: 700, preco: 330 },
-];
+import ApiClient from '../components/api'; // Ajuste o caminho se necessário
 
 function Movimentacoes() {
-  const [marmore, setMarmore] = useState('');
-  const [metrosDisponiveis, setMetrosDisponiveis] = useState(0);
-  const [quantidade, setQuantidade] = useState('');
-  const [tipo, setTipo] = useState('Entrada');
-  const [movimentacoes, setMovimentacoes] = useState([]);
+  // Estado para o nome do item de estoque (o que o usuário digita)
+  const [nomeItemInput, setNomeItemInput] = useState('');
+  // Estado para o ID do item de estoque selecionado
+  const [selectedItemId, setSelectedItemId] = useState(null);
+  // Estado para a quantidade disponível do item selecionado
+  const [quantidadeDisponivel, setQuantidadeDisponivel] = useState(0);
+  // Estado para a quantidade da movimentação
+  const [quantidadeMovimentacao, setQuantidadeMovimentacao] = useState('');
+  // Estado para o tipo de movimentação (Entrada/Saída)
+  const [tipoMovimentacao, setTipoMovimentacao] = useState('Entrada'); // Valor padrão do backend para status de Pedidos é 'Pendente' (Enum no backend)
+  // Estado para a lista de movimentações registradas (do backend)
+  const [movimentacoesList, setMovimentacoesList] = useState([]);
+  // Estado para mensagens de erro
   const [erro, setErro] = useState('');
+  // Estado para a lista de todos os itens de estoque (para sugestões e busca)
+  const [itensEstoque, setItensEstoque] = useState([]);
+  // Estado para as sugestões de itens de estoque
+  const [sugestoesItens, setSugestoesItens] = useState([]);
 
-  // Estado para sugestões de mármores
-  const [sugestoesMarmores, setSugestoesMarmores] = useState([]);
+  // Função para buscar todos os itens de estoque
+  const fetchItensEstoque = useCallback(async () => {
+    try {
+      const response = await ApiClient.estoque.getAll();
+      // Backend retorna: id, nome_item, tipo, quantidade, unidade_medida, preco_unitario
+      // Vamos usar: id, nome_item, quantidade
+      setItensEstoque(response.data || []);
+    } catch (err) {
+      console.error("Erro ao buscar itens de estoque:", err);
+      setErro(err.response?.data?.erro || "Falha ao buscar itens de estoque.");
+    }
+  }, []);
 
-  // Filtra sugestões de mármores
-  const handleMarmoreInput = (e) => {
+  // Função para buscar todas as movimentações de estoque
+  const fetchMovimentacoes = useCallback(async () => {
+    try {
+      const response = await ApiClient.estoque.getAllMovimentacoes();
+      // Backend retorna: id, item_id, nome_item, tipo_movimentacao, quantidade, data_movimentacao, observacoes
+      setMovimentacoesList(response.data || []);
+    } catch (err) {
+      console.error("Erro ao buscar movimentações:", err);
+      setErro(err.response?.data?.erro || "Falha ao buscar movimentações.");
+    }
+  }, []);
+
+  // Efeito para carregar dados iniciais
+  useEffect(() => {
+    fetchItensEstoque();
+    fetchMovimentacoes();
+  }, [fetchItensEstoque, fetchMovimentacoes]);
+
+  // Manipula a entrada no campo de nome do item
+  const handleNomeItemInput = (e) => {
     const valor = e.target.value;
-    setMarmore(valor);
-    const mat = marmores.find((m) => m.nome === valor);
-    setMetrosDisponiveis(mat ? mat.metros : 0);
+    setNomeItemInput(valor);
+    setSelectedItemId(null); // Reseta o ID selecionado se o usuário está digitando
+    setQuantidadeDisponivel(0); // Reseta a quantidade disponível
+
     if (valor) {
-      const sugestoes = marmores
-        .filter((m) => m.nome.toLowerCase().includes(valor.toLowerCase()))
-        .map((m) => m.nome);
-      setSugestoesMarmores(sugestoes);
+      const sugestoes = itensEstoque
+        .filter((item) => item.nome_item.toLowerCase().includes(valor.toLowerCase()))
+        .slice(0, 10); // Limita o número de sugestões
+      setSugestoesItens(sugestoes);
     } else {
-      setSugestoesMarmores([]);
+      setSugestoesItens([]);
     }
   };
 
-  // Seleciona mármore da sugestão
-  const handleSelecionarMarmore = (nome) => {
-    setMarmore(nome);
-    const mat = marmores.find((m) => m.nome === nome);
-    setMetrosDisponiveis(mat ? mat.metros : 0);
-    setSugestoesMarmores([]);
+  // Manipula a seleção de um item da lista de sugestões
+  const handleSelecionarItem = (item) => {
+    setNomeItemInput(item.nome_item); // Preenche o input com o nome do item
+    setSelectedItemId(item.id);        // Guarda o ID do item
+    setQuantidadeDisponivel(item.quantidade); // Atualiza a quantidade disponível
+    setSugestoesItens([]);             // Limpa as sugestões
   };
 
-  const handleSubmit = (e) => {
+  const clearForm = () => {
+    setNomeItemInput('');
+    setSelectedItemId(null);
+    setQuantidadeDisponivel(0);
+    setQuantidadeMovimentacao('');
+    setTipoMovimentacao('Entrada'); // Valor padrão do backend para status de Pedidos é 'Pendente'
+    setSugestoesItens([]);
+    setErro('');
+  };
+
+  // Manipula o envio do formulário de movimentação
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const qtd = parseFloat(quantidade);
+    setErro('');
 
-    if (!marmore || isNaN(qtd) || qtd <= 0) {
-      setErro('Preencha todos os campos corretamente.');
+    const qtdMov = parseFloat(quantidadeMovimentacao);
+
+    if (!selectedItemId) {
+      setErro('Por favor, selecione um item da lista.');
+      return;
+    }
+    if (isNaN(qtdMov) || qtdMov <= 0) {
+      setErro('A quantidade da movimentação deve ser um número positivo.');
       return;
     }
 
-    const marmoreSelecionado = marmores.find((m) => m.nome === marmore);
-    if (!marmoreSelecionado) {
-      setErro('Mármore não encontrado.');
-      return;
-    }
-
-    let novaQuantidade = marmoreSelecionado.metros;
-    if (tipo === 'Entrada') {
-      novaQuantidade += qtd;
-    } else {
-      if (qtd > marmoreSelecionado.metros) {
-        setErro('Quantidade de saída excede o estoque disponível.');
+    const itemSelecionado = itensEstoque.find(item => item.id === selectedItemId);
+    if (!itemSelecionado) { // Checagem de segurança
+        setErro('Item selecionado não encontrado na lista de estoque.');
         return;
-      }
-      novaQuantidade -= qtd;
+    }
+    
+    if (tipoMovimentacao === 'Saída' && qtdMov > parseFloat(itemSelecionado.quantidade)) { // O backend valida se a quantidade em estoque é suficiente para saída
+      setErro('Quantidade de saída excede o estoque disponível.');
+      return;
     }
 
-    marmores.find((m) => m.nome === marmore).metros = novaQuantidade;
-    setMetrosDisponiveis(novaQuantidade);
-
-    const novaMovimentacao = {
-      id: movimentacoes.length + 1,
-      marmore,
-      tipo,
-      quantidade: qtd,
-      data: new Date().toLocaleDateString(),
+    const movimentacaoData = {
+      item_id: selectedItemId,
+      tipo_movimentacao: tipoMovimentacao, // 'Entrada' ou 'Saída' (Enum no backend)
+      quantidade: qtdMov,
+      // observacoes: "Opcional" // Pode adicionar um campo para isso se quiser
     };
 
-    setMovimentacoes([...movimentacoes, novaMovimentacao]);
-    setErro('');
-    setQuantidade('');
-    setMarmore('');
-    setMetrosDisponiveis(0);
-    setTipo('Entrada');
-    setSugestoesMarmores([]);
+    try {
+      await ApiClient.estoque.createMovimentacao(movimentacaoData);
+      // Após sucesso, limpar formulário e recarregar dados
+      clearForm();
+      fetchItensEstoque();  // Recarrega itens para atualizar quantidade disponível
+      fetchMovimentacoes(); // Recarrega a lista de movimentações
+    } catch (err) {
+      console.error("Erro ao registrar movimentação:", err);
+      setErro(err.response?.data?.erro || "Falha ao registrar movimentação.");
+    }
   };
 
   return (
     <div className="container py-4">
-      <h1 className="text-center mb-4">Gerenciar Movimentações</h1>
+      <h1 className="text-center mb-4">Gerenciar Movimentações de Estoque</h1>
+      {erro && (
+        <div className="alert alert-danger mt-3" role="alert">
+          {erro}
+        </div>
+      )}
       <div className="row">
         <div className="col-12 col-md-6 mb-3">
           <form onSubmit={handleSubmit} className="card p-4 shadow-lg">
             <div className="mb-3 position-relative">
-              <label className="form-label">Mármore</label>
+              <label className="form-label">Item do Estoque (ex: Mármore, Cimento)</label>
               <input
                 type="text"
                 className="form-control"
-                value={marmore}
-                onChange={handleMarmoreInput}
-                placeholder="Digite o nome do mármore"
+                value={nomeItemInput}
+                onChange={handleNomeItemInput}
+                placeholder="Digite o nome do item"
                 required
               />
-              {sugestoesMarmores.length > 0 && (
-                <ul className="list-group position-absolute w-100" style={{ zIndex: 1000 }}>
-                  {sugestoesMarmores.map((sugestao, index) => (
+              {sugestoesItens.length > 0 && (
+                <ul className="list-group position-absolute w-100" style={{ zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                  {sugestoesItens.map((sugestao) => (
                     <li
-                      key={index}
-                      className="list-group-item"
-                      onClick={() => handleSelecionarMarmore(sugestao)}
+                      key={sugestao.id}
+                      className="list-group-item list-group-item-action"
+                      onClick={() => handleSelecionarItem(sugestao)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {sugestao}
+                      {sugestao.nome_item} ({sugestao.quantidade} {sugestao.unidade_medida || 'unid.'}) {/* 'unidade_medida' vem do backend */}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
             <div className="mb-3">
-              <label className="form-label">Metros Disponíveis (m²)</label>
+              <label className="form-label">Quantidade Disponível</label>
               <input
                 type="text"
                 className="form-control"
-                value={metrosDisponiveis}
+                value={`${quantidadeDisponivel} ${itensEstoque.find(i => i.id === selectedItemId)?.unidade_medida || ''}`} /* 'unidade_medida' vem do backend */
                 readOnly
               />
             </div>
             <div className="mb-3">
-              <label className="form-label">Quantidade (m²)</label>
+              <label className="form-label">Quantidade da Movimentação</label>
               <input
                 type="number"
+                step="0.01"
                 className="form-control"
-                value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
+                value={quantidadeMovimentacao}
+                onChange={(e) => setQuantidadeMovimentacao(e.target.value)}
+                placeholder="Ex: 10.5"
                 required
               />
             </div>
             <div className="mb-3">
-              <label className="form-label">Tipo</label>
+              <label className="form-label">Tipo de Movimentação</label>
               <select
                 className="form-select"
-                value={tipo}
-                onChange={(e) => setTipo(e.target.value)}
+                value={tipoMovimentacao}
+                onChange={(e) => setTipoMovimentacao(e.target.value)}
               >
                 <option value="Entrada">Entrada</option>
                 <option value="Saída">Saída</option>
@@ -162,35 +207,38 @@ function Movimentacoes() {
             <button type="submit" className="btn btn-primary w-100">
               Registrar Movimentação
             </button>
-            {erro && (
-              <div className="alert alert-warning mt-3" role="alert">
-                {erro}
-              </div>
-            )}
           </form>
         </div>
         <div className="col-12 col-md-6 mb-3">
           <div className="card p-4 shadow-lg bg-light">
-            <h4>Lista de Movimentações</h4>
-            <div className="table-responsive">
-              <table className="table table-striped">
-                <thead>
+            <h4>Lista de Movimentações Recentes</h4>
+            <div className="table-responsive" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <table className="table table-striped table-hover">
+                <thead className="table-dark sticky-top">
                   <tr>
-                    <th>Mármore</th>
+                    <th>Item</th>
                     <th>Tipo</th>
-                    <th>Quantidade (m²)</th>
+                    <th>Quantidade</th>
                     <th>Data</th>
+                    {/* <th>Observações</th> */}
                   </tr>
                 </thead>
                 <tbody>
-                  {movimentacoes.map((mov) => (
-                    <tr key={mov.id}>
-                      <td>{mov.marmore}</td>
-                      <td>{mov.tipo}</td>
-                      <td>{mov.quantidade}</td>
-                      <td>{mov.data}</td>
+                  {movimentacoesList.length > 0 ? (
+                    movimentacoesList.map((mov) => (
+                      <tr key={mov.id}>
+                        <td>{mov.nome_item}</td> {/* 'nome_item' é incluído na serialização de Movimentacoes_Estoque */}
+                        <td>{mov.tipo_movimentacao}</td>
+                        <td>{mov.quantidade}</td>
+                        <td>{new Date(mov.data_movimentacao).toLocaleDateString()}</td> {/* 'data_movimentacao' vem do backend */}
+                        {/* <td>{mov.observacoes}</td> */} {/* 'observacoes' vem do backend */}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                        <td colSpan="4" className="text-center">Nenhuma movimentação registrada.</td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
