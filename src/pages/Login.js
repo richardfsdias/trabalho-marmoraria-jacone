@@ -19,7 +19,7 @@ function Login() {
       const response = await ApiClient.auth.login({ email, senha });
       const { access_token } = response.data;
       localStorage.setItem('token', access_token); // Guarda o token
-      navigate('/dashboard'); // Redireciona para o dashboard ou outra página principal
+      navigate('/orcamentos'); // Redireciona para o dashboard ou outra página principal
     } catch (err) {
       console.error('Erro de login:', err);
       setErro(err.response?.data?.erro || 'Erro ao fazer login. Verifique suas credenciais.');

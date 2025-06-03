@@ -25,7 +25,7 @@ CORS(app, resources={r"/*": {
 # Configuração do MySQL via variáveis de ambiente
 load_dotenv()
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL',
-                                                  'mysql+pymysql://root:JulietaeLana1@127.0.0.1/marmoraria?charset=utf8mb4')
+                                                'mysql+pymysql://root:admin@127.0.0.1/marmorariateste?charset=utf8mb4')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Inicializa o banco de dados

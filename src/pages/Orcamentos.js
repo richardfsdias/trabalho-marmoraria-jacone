@@ -287,7 +287,7 @@ function Orcamentos() {
               </div>
               <button
                 type="button"
-                className="btn btn-info btn-sm mb-3"
+                className="btn btn-primary mt-3 me-2"
                 onClick={handleAddItem}
               >
                 Adicionar Item
@@ -335,6 +335,7 @@ function Orcamentos() {
         <div className="col-md-8">
           <div className="card p-4 shadow-lg">
             <h4>Lista de Orçamentos</h4>
+            <div className='table table-responsive'>
             <table className="table table-striped">
               <thead>
                 <tr>
@@ -393,6 +394,7 @@ function Orcamentos() {
                 ))}
               </tbody>
             </table>
+            </div>
             <p className="fw-bold mt-3">
               Total Acumulado (Aprovados):{' '}
               {formatCurrency(

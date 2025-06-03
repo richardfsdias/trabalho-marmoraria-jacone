@@ -191,6 +191,7 @@ function Clientes() {
         <div className="col-md-8">
           <div className="card p-4 shadow-lg">
             <h4>Lista de Clientes</h4>
+            <div className='table table-responsive'>
             <table className="table table-striped">
               <thead>
                 <tr>
@@ -224,6 +225,7 @@ function Clientes() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>

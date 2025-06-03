@@ -177,6 +177,7 @@ function Marmores() {
         <div className="col-md-8">
           <div className="card p-4 shadow-lg">
             <h4>Lista de Itens em Estoque</h4> {/* Título ajustado */}
+            <div className='table table-responsive'>
             <table className="table table-striped">
               <thead>
                 <tr>
@@ -214,6 +215,7 @@ function Marmores() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>
