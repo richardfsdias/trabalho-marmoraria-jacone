@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 from sqlalchemy import Enum
 from sqlalchemy.exc import IntegrityError
 import re
-# from mangum import Mangum
 
 # Inicializa o Flask
 app = Flask(__name__)
@@ -23,9 +22,11 @@ CORS(app, resources={r"/*": {
 }})
 
 # Configuração do MySQL via variáveis de ambiente
-load_dotenv()
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL',
-                                                'mysql+pymysql://root:admin@127.0.0.1/marmorariateste?charset=utf8mb4')
+if os.path.exists('.env'):
+    from dotenv import load_dotenv
+    load_dotenv()
+
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Inicializa o banco de dados
