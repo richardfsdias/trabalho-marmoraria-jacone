@@ -1,8 +1,8 @@
-"""Reordenar modelos
+"""PORFAVOR VAI
 
-Revision ID: 7acedf0f29b5
+Revision ID: a27628640ed8
 Revises: 
-Create Date: 2025-06-07 18:57:10.823918
+Create Date: 2025-06-07 19:23:41.009786
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '7acedf0f29b5'
+revision = 'a27628640ed8'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -69,9 +69,9 @@ def upgrade():
     sa.Column('cliente_id', sa.Integer(), nullable=False),
     sa.Column('data_criacao', sa.DateTime(), nullable=True),
     sa.Column('data_atualizacao', sa.DateTime(), nullable=True),
-    sa.Column('status', sa.Enum('Pendente', 'Aprovado', 'Rejeitado', name='status_orcamento_enum'), nullable=False),
-    sa.Column('observacoes', sa.Text(), nullable=True),
     sa.Column('total_orcamento', sa.Float(), nullable=False),
+    sa.Column('observacoes', sa.String(length=500), nullable=True),
+    sa.Column('status', sa.Enum('Pendente', 'Aprovado', 'Rejeitado', name='orcamento_status'), nullable=True),
     sa.ForeignKeyConstraint(['cliente_id'], ['clientes.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -99,8 +99,10 @@ def upgrade():
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('orcamento_id', sa.Integer(), nullable=False),
     sa.Column('item_estoque_id', sa.Integer(), nullable=False),
+    sa.Column('nome_item', sa.String(length=255), nullable=False),
     sa.Column('quantidade', sa.Float(), nullable=False),
-    sa.Column('preco_unitario_praticado', sa.Float(), nullable=False),
+    sa.Column('unidade_medida', sa.String(length=50), nullable=False),
+    sa.Column('preco_unitario_no_orcamento', sa.Float(), nullable=False),
     sa.Column('subtotal', sa.Float(), nullable=False),
     sa.Column('log_calculo', sa.Text(), nullable=True),
     sa.ForeignKeyConstraint(['item_estoque_id'], ['estoque.id'], ),

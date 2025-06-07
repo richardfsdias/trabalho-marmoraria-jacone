@@ -29,20 +29,22 @@ function Cadastro() {
 
         const uppercaseRegex = /[A-Z]/;
         const lowercaseRegex = /[a-z]/;
-        const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_+\-]/; // <--- ATUALIZADO
+        const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_+\-]/;
         const numberRegex = /[0-9]/;
 
+        // >>> CORREÇÃO 3: Alterado o comprimento mínimo da senha de 6 para 8. <<<
+        // E ajustada a mensagem de erro para refletir a nova regra.
         if (
-            senha.length < 6 ||
+            senha.length < 8 ||
             !uppercaseRegex.test(senha) ||
             !lowercaseRegex.test(senha) ||
             !specialCharRegex.test(senha) ||
             !numberRegex.test(senha)
         ) {
-            // Ajuste a mensagem de erro para refletir os caracteres especiais corretos, se desejar
-            setErro('A senha deve ter mín. 6 caracteres, 1 maiúscula, 1 minúscula, 1 número e 1 caractere especial (ex: !@#$%^&*()_+-).');
+            setErro('A senha deve ter no mínimo 8 caracteres, incluindo uma letra maiúscula, uma minúscula, um número e um caractere especial (ex: !@#$_-).');
             return;
         }
+
         if (senha !== confirmarSenha) {
             setErro('As senhas não coincidem.');
             return;
@@ -56,7 +58,7 @@ function Cadastro() {
 
         try {
             const userData = { nome, email, senha, cpf: cpfLimpo };
-            await ApiClient.auth.cadastro(userData); // <--- CORRIGIDO
+            await ApiClient.auth.cadastro(userData);
             alert('Cadastro realizado com sucesso! Faça login para continuar.');
             navigate('/login');
         } catch (err) {
@@ -65,8 +67,6 @@ function Cadastro() {
         }
     };
 
-    // --- 4. Estrutura do Formulário (JSX) ---
-    // Adicionaremos o campo de input para CPF
     return (
         <div className="container d-flex justify-content-center align-items-center vh-100">
             <div className="card p-4 shadow-lg" style={{ maxWidth: '400px', width: '100%' }}>
@@ -94,7 +94,6 @@ function Cadastro() {
                             required
                         />
                     </div>
-                    {/* CAMPO DE CPF ADICIONADO */}
                     <div className="mb-3">
                         <label htmlFor="cpf" className="form-label">CPF</label>
                         <input
@@ -102,11 +101,10 @@ function Cadastro() {
                             className="form-control"
                             id="cpf"
                             value={cpf}
-                            onChange={(e) => setCpf(e.target.value)}
-                            placeholder="000.000.000-00" // Exemplo de placeholder
+                            onChange={(e) => setCpf(formatCpf(e.target.value))} // Usando a função para formatar
+                            placeholder="000.000.000-00"
                             required
                         />
-                        {/* Você pode adicionar uma máscara para CPF aqui usando uma biblioteca como 'react-input-mask' se desejar */}
                     </div>
                     <div className="mb-3">
                         <label htmlFor="senha" className="form-label">Senha</label>
@@ -118,8 +116,9 @@ function Cadastro() {
                             onChange={(e) => setSenha(e.target.value)}
                             required
                         />
+                         {/* Mensagem de ajuda atualizada */}
                         <small className="form-text text-muted">
-                            Deve ter mín. 6 caracteres, uma letra maiúscula e um caractere especial.
+                            Mín. 8 caracteres, 1 maiúscula, 1 minúscula, 1 número e 1 especial.
                         </small>
                     </div>
                     <div className="mb-3">
@@ -134,7 +133,6 @@ function Cadastro() {
                         />
                     </div>
                     <button type="submit" className="btn btn-primary w-100">Cadastrar</button>
-                    {/* Exibição da mensagem de erro */}
                     {erro && (
                         <div className="alert alert-danger mt-3" role="alert">
                             {erro}
