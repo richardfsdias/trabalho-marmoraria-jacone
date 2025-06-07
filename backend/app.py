@@ -26,7 +26,7 @@ if os.path.exists('.env'):
     from dotenv import load_dotenv
     load_dotenv()
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://marmoraria:MarmorariaJacone@marmoraria-db.cqjsy4y464q3.us-east-1.rds.amazonaws.com/marmoraria?charset=utf8mb4')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Inicializa o banco de dados
@@ -678,64 +678,91 @@ def update_orcamento(orcamento_id):
     data = request.get_json()
     observacoes = data.get('observacoes')
     itens_orcamento_data = data.get('itens', [])
+    status = data.get('status') # <--- MANTENHA ESTA LINHA para pegar o status na atualização
 
     try:
         orcamento = Orcamentos.query.get(orcamento_id)
         if not orcamento:
             return jsonify({"erro": "Orçamento não encontrado."}), 404
 
-        # Atualiza observações se fornecidas
-        if observacoes is not None:
+        # Se houver necessidade de atualizar cliente_id (raro para orçamento)
+        # if cliente_id is not None:
+        #    orcamento.cliente_id = cliente_id
+
+        if observacoes is not None: # Atualiza observações apenas se fornecidas
             orcamento.observacoes = observacoes
 
-        # Lógica para atualizar itens do orçamento:
-        # Primeiro, delete os itens existentes para recriá-los com os novos dados
-        for item in orcamento.itens:
-            db.session.delete(item)
-        db.session.flush() # Remove os itens antigos do banco de dados
+        if status: # <--- MANTENHA ESTE BLOCO para atualizar o status
+            # Validação: Garante que o status seja um dos valores válidos do Enum
+            if status not in ['Pendente', 'Aprovado', 'Rejeitado']:
+                return jsonify({"erro": "Status inválido."}), 400
+            orcamento.status = status
 
-        total_orcamento_calculado = 0
+        # Lógica para atualizar itens existentes ou adicionar novos
+        # Primeiro, remova itens que não estão mais no payload
+        # Crie uma lista de IDs dos itens que vieram no payload
+        itens_payload_ids = {item_data.get('id') for item_data in itens_orcamento_data if item_data.get('id')}
+
+        # Remova itens do banco de dados que não estão mais no payload
+        for item_existente in list(orcamento.itens): # Crie uma cópia da lista para iterar com segurança
+            if item_existente.id not in itens_payload_ids:
+                db.session.delete(item_existente)
+
+        total_calculado = 0
         for item_data in itens_orcamento_data:
+            item_id = item_data.get('id') # ID do item de orçamento, se já existir
             item_estoque_id = item_data.get('item_estoque_id')
             quantidade = item_data.get('quantidade')
             preco_unitario_praticado = item_data.get('preco_unitario_praticado')
             subtotal = item_data.get('subtotal')
-            log_calculo = item_data.get('log_calculo') # <--- NOVO: Pegar o log do frontend
+            log_calculo = item_data.get('log_calculo')
 
-            if not all([item_estoque_id, quantidade, preco_unitario_praticado, subtotal]):
-                db.session.rollback()
-                return jsonify({"erro": "Dados incompletos para um item do orçamento."}), 400
 
-            item_estoque = Estoque.query.get(item_estoque_id)
-            if not item_estoque:
-                db.session.rollback()
-                return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
+            if item_id: # Item existente, atualiza
+                item_orcamento = ItensOrcamento.query.get(item_id)
+                if item_orcamento:
+                    item_orcamento.item_estoque_id = item_estoque_id
+                    item_orcamento.quantidade = quantidade
+                    item_orcamento.preco_unitario_praticado = preco_unitario_praticado
+                    item_orcamento.subtotal = subtotal
+                    item_orcamento.log_calculo = log_calculo
+                else:
+                    # Isso pode acontecer se o ID do item for inválido, tratar como novo
+                    novo_item = ItensOrcamento(
+                        orcamento_id=orcamento_id,
+                        item_estoque_id=item_estoque_id,
+                        quantidade=quantidade,
+                        preco_unitario_praticado=preco_unitario_praticado,
+                        subtotal=subtotal,
+                        log_calculo=log_calculo
+                    )
+                    db.session.add(novo_item)
+            else: # Novo item, adiciona
+                novo_item = ItensOrcamento(
+                    orcamento_id=orcamento_id,
+                    item_estoque_id=item_estoque_id,
+                    quantidade=quantidade,
+                    preco_unitario_praticado=preco_unitario_praticado,
+                    subtotal=subtotal,
+                    log_calculo=log_calculo
+                )
+                db.session.add(novo_item)
+            total_calculado += subtotal # Calcula o total para a atualização
 
-            novo_item_orcamento = ItensOrcamento(
-                orcamento_id=orcamento.id,
-                item_estoque_id=item_estoque_id,
-                nome_item=item_estoque.nome,
-                quantidade=quantidade,
-                unidade_medida=item_estoque.unidade_medida,
-                preco_unitario_praticado=preco_unitario_praticado,
-                subtotal=subtotal,
-                log_calculo=log_calculo # <--- ATRIBUIR O LOG AQUI
-            )
-            db.session.add(novo_item_orcamento)
-            total_orcamento_calculado += subtotal
+        orcamento.total_orcamento = total_calculado # Atualiza o total final do orçamento
 
-        orcamento.total_orcamento = total_orcamento_calculado
-        orcamento.data_atualizacao = db.func.current_timestamp()
         db.session.commit()
         return jsonify(orcamento.serialize()), 200
 
     except IntegrityError as e:
         db.session.rollback()
+        print(f"IntegrityError ao atualizar orçamento: {e}") # Adicione log para depuração
         return jsonify({"erro": "Erro de banco de dados: " + str(e)}), 500
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao atualizar orçamento: {e}")
-        return jsonify({"erro": "Erro interno do servidor ao atualizar orçamento."}), 500
+        import traceback
+        print(f"Erro inesperado ao atualizar orçamento: {traceback.format_exc()}") # Log completo do erro
+        return jsonify({"erro": "Erro interno do servidor ao atualizar orçamento. " + str(e)}), 500
 
 @app.route('/orcamentos/<int:id>', methods=['DELETE'])
 @jwt_required()

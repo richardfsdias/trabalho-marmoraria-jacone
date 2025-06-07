@@ -158,8 +158,7 @@ function Orcamentos() {
     setEditandoItemOrcamentoId(itemToEdit.id);
   }, []);
 
-  // Lógica de submissão do formulário de Orçamento (CRIAR/EDITAR)
-  const handleSubmit = async (e) => {
+   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -176,16 +175,20 @@ function Orcamentos() {
         quantidade: item.quantidade,
         preco_unitario_praticado: item.preco_unitario_praticado,
         subtotal: item.subtotal,
-        log_calculo: item.log_calculo // Enviando o log de cálculo para o backend
+        log_calculo: item.log_calculo
       })),
-      status: statusOrcamento // Incluir o status
+      // Não inclua o status aqui para criação. Ele será 'Pendente' por padrão no backend.
+      // Se for uma atualização, o status será adicionado condicionalmente abaixo.
     };
 
     try {
       if (editId) {
+        // Se estamos EDITANDO, ADICIONE o status ao objeto orcamentoData
+        orcamentoData.status = statusOrcamento; // <--- ADICIONE ESTA LINHA AQUI
         await ApiClient.orcamentos.update(editId, orcamentoData);
         alert('Orçamento atualizado com sucesso!');
       } else {
+        // Se estamos CRIANDO, NÃO ADICIONE o status. O backend usará o padrão.
         await ApiClient.orcamentos.create(orcamentoData);
         alert('Orçamento criado com sucesso!');
       }
