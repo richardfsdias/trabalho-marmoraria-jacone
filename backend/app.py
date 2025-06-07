@@ -34,7 +34,7 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # Configuração do JWT
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'super-secret-key')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 jwt = JWTManager(app)
 
 # --- VERIFIQUE ESTAS CONFIGURAÇÕES JWT CRÍTICAS ---
@@ -267,10 +267,15 @@ class ItensOrcamento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     orcamento_id = db.Column(db.Integer, db.ForeignKey('orcamentos.id'), nullable=False)
     item_estoque_id = db.Column(db.Integer, db.ForeignKey('estoque.id'), nullable=False)
+    nome_item = db.Column(db.String(255), nullable=False)
     quantidade = db.Column(db.Float, nullable=False)
-    preco_unitario_no_orcamento = db.Column(db.Float, nullable=False) # Preço do item no momento da criação do orçamento
+    unidade_medida = db.Column(db.String(50), nullable=False)
+    preco_unitario_no_orcamento = db.Column(db.Float, nullable=False) # Preço que foi usado no momento do orçamento
+    subtotal = db.Column(db.Float, nullable=False) # Subtotal do item no orçamento
+    # NOVO CAMPO: Para armazenar o log do cálculo para este item
+    log_calculo = db.Column(db.Text, nullable=True) # Pode ser NULL se não houver log complexo
 
-    # Relacionamento com Estoque para obter o nome do item
+    # Relacionamento com Estoque (para pegar informações do item)
     item_estoque = db.relationship('Estoque', backref='itens_orcamento_rel')
 
     def serialize(self):
@@ -278,13 +283,13 @@ class ItensOrcamento(db.Model):
             'id': self.id,
             'orcamento_id': self.orcamento_id,
             'item_estoque_id': self.item_estoque_id,
-            # Garanta que self.item_estoque existe e tem 'nome' e 'unidade_medida'
-            'nome_item': self.item_estoque.nome, # <-- Aqui o erro estava acontecendo
-            'unidade_medida': self.item_estoque.unidade_medida, # <-- E aqui
+            'nome_item': self.nome_item,
             'quantidade': self.quantidade,
-            'preco_unitario_no_orcamento': float(self.preco_unitario_no_orcamento)
+            'unidade_medida': self.unidade_medida,
+            'preco_unitario_praticado': self.preco_unitario_praticado,
+            'subtotal': self.subtotal,
+            'log_calculo': self.log_calculo # Incluir na serialização
         }
-    
 
 
 # Rotas da API
@@ -604,130 +609,133 @@ def create_orcamento():
     data = request.get_json()
     cliente_id = data.get('cliente_id')
     observacoes = data.get('observacoes')
-    itens_orcamento_data = data.get('itens', []) # Lista de dicionários para os itens
+    itens_orcamento_data = data.get('itens', []) # Lista de itens para o orçamento
 
     if not cliente_id or not itens_orcamento_data:
         return jsonify({"erro": "Cliente e itens do orçamento são obrigatórios."}), 400
 
     try:
-        # Verifica se o cliente existe
         cliente = Clientes.query.get(cliente_id)
         if not cliente:
             return jsonify({"erro": "Cliente não encontrado."}), 404
 
-        total_orcamento_calculado = 0
-        novos_itens_orcamento = []
+        novo_orcamento = Orcamentos(
+            cliente_id=cliente_id,
+            observacoes=observacoes,
+            total_orcamento=0 # Será calculado abaixo
+        )
+        db.session.add(novo_orcamento)
+        db.session.flush() # Para ter o ID do orçamento antes de adicionar os itens
 
+        total_orcamento_calculado = 0
         for item_data in itens_orcamento_data:
             item_estoque_id = item_data.get('item_estoque_id')
             quantidade = item_data.get('quantidade')
-            preco_unitario = item_data.get('preco_unitario_no_orcamento') # Recebe o preço calculado do frontend
+            preco_unitario_praticado = item_data.get('preco_unitario_praticado')
+            subtotal = item_data.get('subtotal') # O frontend já pode enviar o subtotal
+            log_calculo = item_data.get('log_calculo') # <--- NOVO: Pegar o log do frontend
 
-            if not item_estoque_id or not quantidade or not preco_unitario:
+            if not all([item_estoque_id, quantidade, preco_unitario_praticado, subtotal]):
                 db.session.rollback()
-                return jsonify({"erro": "Todos os itens do orçamento devem ter item_estoque_id, quantidade e preco_unitario_no_orcamento."}), 400
+                return jsonify({"erro": "Dados incompletos para um item do orçamento."}), 400
 
-            # Verifica se o item de estoque existe
             item_estoque = Estoque.query.get(item_estoque_id)
             if not item_estoque:
                 db.session.rollback()
                 return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
 
-            # O preço unitário já vem do frontend, que deve tê-lo obtido do estoque no momento da adição do item
-            # Aqui, apenas o utilizamos para o cálculo do total e para armazenar
-            total_item = float(quantidade) * float(preco_unitario)
-            total_orcamento_calculado += total_item
-
-            novo_item = ItensOrcamento(
+            novo_item_orcamento = ItensOrcamento(
+                orcamento_id=novo_orcamento.id,
                 item_estoque_id=item_estoque_id,
-                quantidade=float(quantidade),
-                preco_unitario_no_orcamento=float(preco_unitario)
+                nome_item=item_estoque.nome, # Salva o nome do item para referência futura
+                quantidade=quantidade,
+                unidade_medida=item_estoque.unidade_medida,
+                preco_unitario_praticado=preco_unitario_praticado,
+                subtotal=subtotal,
+                log_calculo=log_calculo # <--- ATRIBUIR O LOG AQUI
             )
-            novos_itens_orcamento.append(novo_item)
+            db.session.add(novo_item_orcamento)
+            total_orcamento_calculado += subtotal
 
-        nova_orcamento = Orcamentos(
-            cliente_id=cliente_id,
-            observacoes=observacoes,
-            total_orcamento=total_orcamento_calculado,
-            itens=novos_itens_orcamento # Adiciona os itens ao orçamento
-        )
-
-        db.session.add(nova_orcamento)
+        novo_orcamento.total_orcamento = total_orcamento_calculado
         db.session.commit()
-        return jsonify(nova_orcamento.serialize()), 201
+        return jsonify(novo_orcamento.serialize()), 201
+
+    except IntegrityError as e:
+        db.session.rollback()
+        # Tratamento mais específico para erros de integridade (ex: cliente_id inválido)
+        if "Foreign key constraint fails" in str(e):
+             return jsonify({"erro": "Erro de chave estrangeira. Verifique se o cliente existe."}), 400
+        return jsonify({"erro": "Erro de banco de dados: " + str(e)}), 500
     except Exception as e:
         db.session.rollback()
-        return jsonify({"erro": str(e)}), 500
+        print(f"Erro ao criar orçamento: {e}")
+        return jsonify({"erro": "Erro interno do servidor ao criar orçamento."}), 500
 
-@app.route('/orcamentos/<int:id>', methods=['PUT'])
+@app.route('/orcamentos/<int:orcamento_id>', methods=['PUT'])
 @jwt_required()
-def update_orcamento(id):
-    orcamento = Orcamentos.query.get(id)
-    if not orcamento:
-        return jsonify({"erro": "Orçamento não encontrado."}), 404
-
+def update_orcamento(orcamento_id):
     data = request.get_json()
-    cliente_id = data.get('cliente_id')
     observacoes = data.get('observacoes')
-    status = data.get('status')
     itens_orcamento_data = data.get('itens', [])
 
     try:
-        if cliente_id:
-            cliente = Clientes.query.get(cliente_id)
-            if not cliente:
-                return jsonify({"erro": "Cliente não encontrado."}), 404
-            orcamento.cliente_id = cliente_id
+        orcamento = Orcamentos.query.get(orcamento_id)
+        if not orcamento:
+            return jsonify({"erro": "Orçamento não encontrado."}), 404
+
+        # Atualiza observações se fornecidas
         if observacoes is not None:
             orcamento.observacoes = observacoes
-        if status:
-            if status not in ['Pendente', 'Aprovado', 'Rejeitado']:
-                return jsonify({"erro": "Status inválido. Use 'Pendente', 'Aprovado' ou 'Rejeitado'."}), 400
-            orcamento.status = status
 
-        # Atualiza os itens do orçamento
-        if itens_orcamento_data is not None:
-            # Remove itens antigos
-            for item in orcamento.itens:
-                db.session.delete(item)
-            db.session.flush() # Garante que os itens deletados são removidos da sessão
+        # Lógica para atualizar itens do orçamento:
+        # Primeiro, delete os itens existentes para recriá-los com os novos dados
+        for item in orcamento.itens:
+            db.session.delete(item)
+        db.session.flush() # Remove os itens antigos do banco de dados
 
-            total_orcamento_recalculado = 0
-            novos_itens_orcamento = []
+        total_orcamento_calculado = 0
+        for item_data in itens_orcamento_data:
+            item_estoque_id = item_data.get('item_estoque_id')
+            quantidade = item_data.get('quantidade')
+            preco_unitario_praticado = item_data.get('preco_unitario_praticado')
+            subtotal = item_data.get('subtotal')
+            log_calculo = item_data.get('log_calculo') # <--- NOVO: Pegar o log do frontend
 
-            for item_data in itens_orcamento_data:
-                item_estoque_id = item_data.get('item_estoque_id')
-                quantidade = item_data.get('quantidade')
-                preco_unitario = item_data.get('preco_unitario_no_orcamento')
+            if not all([item_estoque_id, quantidade, preco_unitario_praticado, subtotal]):
+                db.session.rollback()
+                return jsonify({"erro": "Dados incompletos para um item do orçamento."}), 400
 
-                if not item_estoque_id or not quantidade or not preco_unitario:
-                    db.session.rollback()
-                    return jsonify({"erro": "Todos os itens do orçamento devem ter item_estoque_id, quantidade e preco_unitario_no_orcamento."}), 400
+            item_estoque = Estoque.query.get(item_estoque_id)
+            if not item_estoque:
+                db.session.rollback()
+                return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
 
-                item_estoque = Estoque.query.get(item_estoque_id)
-                if not item_estoque:
-                    db.session.rollback()
-                    return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
+            novo_item_orcamento = ItensOrcamento(
+                orcamento_id=orcamento.id,
+                item_estoque_id=item_estoque_id,
+                nome_item=item_estoque.nome,
+                quantidade=quantidade,
+                unidade_medida=item_estoque.unidade_medida,
+                preco_unitario_praticado=preco_unitario_praticado,
+                subtotal=subtotal,
+                log_calculo=log_calculo # <--- ATRIBUIR O LOG AQUI
+            )
+            db.session.add(novo_item_orcamento)
+            total_orcamento_calculado += subtotal
 
-                total_item = float(quantidade) * float(preco_unitario)
-                total_orcamento_recalculado += total_item
-
-                novo_item = ItensOrcamento(
-                    item_estoque_id=item_estoque_id,
-                    quantidade=float(quantidade),
-                    preco_unitario_no_orcamento=float(preco_unitario),
-                    orcamento=orcamento # Associa ao orçamento existente
-                )
-                novos_itens_orcamento.append(novo_item)
-
-            orcamento.itens = novos_itens_orcamento
-            orcamento.total_orcamento = total_orcamento_recalculado
-
+        orcamento.total_orcamento = total_orcamento_calculado
+        orcamento.data_atualizacao = db.func.current_timestamp()
         db.session.commit()
         return jsonify(orcamento.serialize()), 200
+
+    except IntegrityError as e:
+        db.session.rollback()
+        return jsonify({"erro": "Erro de banco de dados: " + str(e)}), 500
     except Exception as e:
         db.session.rollback()
-        return jsonify({"erro": str(e)}), 500
+        print(f"Erro ao atualizar orçamento: {e}")
+        return jsonify({"erro": "Erro interno do servidor ao atualizar orçamento."}), 500
 
 @app.route('/orcamentos/<int:id>', methods=['DELETE'])
 @jwt_required()
@@ -861,18 +869,37 @@ def update_estoque_item(item_id):
         db.session.rollback()
         return jsonify({'erro': str(e)}), 500
 
-@app.route('/estoque/<int:id>', methods=['DELETE'])
+# Rota para excluir um item de estoque
+@app.route('/estoque/<int:item_id>', methods=['DELETE'])
 @jwt_required()
-def delete_estoque_item(id):
+def delete_estoque(item_id):
+    current_user_id = get_jwt_identity()
+
+    # Verifica se o usuário é um administrador ou gerente (ou quem tem permissão para excluir)
+    # Adapte esta lógica de permissão conforme seu app.
+    # Exemplo: Se você tem um modelo Usuario e um campo 'cargo'
+    # usuario = Usuario.query.get(current_user_id)
+    # if not usuario or usuario.cargo not in ['administrador', 'gerente']:
+    #     return jsonify({"erro": "Acesso não autorizado."}), 403
+
     try:
-        item = Estoque.query.get(id)
-        if not item:
-            return jsonify({"erro": "Item de estoque não encontrado"}), 404
-        db.session.delete(item)
+        item_estoque = Estoque.query.get(item_id)
+        if not item_estoque:
+            return jsonify({"erro": "Item de estoque não encontrado."}), 404
+
+        # >>> MUDANÇA CRUCIAL AQUI: EXCLUIR MOVIMENTAÇÕES RELACIONADAS PRIMEIRO <<<
+        movimentacoes_relacionadas = Movimentacoes_Estoque.query.filter_by(item_id=item_id).all()
+        for mov in movimentacoes_relacionadas:
+            db.session.delete(mov)
+        # >>> FIM DA MUDANÇA <<<
+
+        db.session.delete(item_estoque)
         db.session.commit()
-        return jsonify({"message": "Item de estoque excluído com sucesso"}), 200
+        return jsonify({"mensagem": "Item de estoque e suas movimentações relacionadas excluídos com sucesso."}), 200
     except Exception as e:
         db.session.rollback()
+        # Logar o erro completo para depuração (opcional, mas recomendado)
+        print(f"Erro ao excluir item de estoque: {e}")
         return jsonify({"erro": str(e)}), 500
 
 @app.route('/movimentacoes_estoque', methods=['GET'])
@@ -922,10 +949,6 @@ def add_movimentacao_estoque():
     except Exception as e:
         db.session.rollback()
         return jsonify({"erro": str(e)}), 500
-
-
-# Handler para o AWS Lambda
-# handler = Mangum(app)
 
 if __name__ == '__main__':
     # Cria as tabelas se elas não existirem
