@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from sqlalchemy import Enum
 from sqlalchemy.exc import IntegrityError
 import re
+import traceback
 
 # Inicializa o Flask
 app = Flask(__name__)
@@ -197,7 +198,6 @@ class Estoque(db.Model):
     quantidade = db.Column(db.Float, nullable=False)
     unidade_medida = db.Column(db.String(20), nullable=False)
     preco_unitario = db.Column(db.Float, nullable=False)
-    # tipo = db.Column(db.String(50), nullable=True) # REMOVA OU COMENTE ESTA LINHA
     data_cadastro = db.Column(db.DateTime, default=db.func.current_timestamp())
     data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
@@ -208,7 +208,6 @@ class Estoque(db.Model):
             'quantidade': float(self.quantidade),
             'unidade_medida': self.unidade_medida,
             'preco_unitario': float(self.preco_unitario),
-            # 'tipo': self.tipo, # REMOVA OU COMENTE ESTA LINHA
             'data_cadastro': self.data_cadastro.isoformat(),
             'data_atualizacao': self.data_atualizacao.isoformat()
         }
@@ -234,61 +233,57 @@ class Movimentacoes_Estoque(db.Model):
             'observacoes': self.observacoes
         }
     
-class Orcamentos(db.Model):
+class Orcamento(db.Model):
     __tablename__ = 'orcamentos'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
     data_criacao = db.Column(db.DateTime, default=db.func.current_timestamp())
     data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
-    total_orcamento = db.Column(db.Float, nullable=False)
-    observacoes = db.Column(db.String(500))
-    status = db.Column(Enum('Pendente', 'Aprovado', 'Rejeitado', name='orcamento_status'), default='Pendente')
-
-    # Relacionamento com Cliente
-    cliente = db.relationship('Clientes', backref='orcamentos_rel')
-    # Relacionamento com ItensOrcamento
-    itens = db.relationship('ItensOrcamento', backref='orcamento', cascade='all, delete-orphan', lazy=True) # Adicionado
+    status = db.Column(Enum('Pendente', 'Aprovado', 'Rejeitado', name='status_orcamento_enum'), default='Pendente', nullable=False)
+    observacoes = db.Column(db.Text)
+    total_orcamento = db.Column(db.Float, nullable=False) # <--- Muito importante: nullable=False
+    itens = db.relationship('Itens_Orcamento', backref='orcamento', lazy=True, cascade='all, delete-orphan')
+    cliente = db.relationship('Cliente', backref='orcamentos_cliente')
 
     def serialize(self):
+        cliente_nome = self.cliente.nome if self.cliente else None
+        itens_serializados = [item.serialize() for item in self.itens]
         return {
             'id': self.id,
             'cliente_id': self.cliente_id,
-            'nome_cliente': self.cliente.nome, # Adicionado para facilitar no frontend
-            'data_criacao': self.data_criacao.isoformat(),
-            'data_atualizacao': self.data_atualizacao.isoformat(),
-            'total_orcamento': float(self.total_orcamento), # Garante que é float para JSON
-            'observacoes': self.observacoes,
+            'cliente_nome': cliente_nome,
+            'data_criacao': self.data_criacao.isoformat() if self.data_criacao else None,
+            'data_atualizacao': self.data_atualizacao.isoformat() if self.data_atualizacao else None,
             'status': self.status,
-            'itens': [item.serialize() for item in self.itens] # Inclui os itens do orçamento
+            'observacoes': self.observacoes,
+            'total_orcamento': self.total_orcamento,
+            'itens': itens_serializados
         }
 
-class ItensOrcamento(db.Model):
+class Itens_Orcamento(db.Model):
     __tablename__ = 'itens_orcamento'
     id = db.Column(db.Integer, primary_key=True)
     orcamento_id = db.Column(db.Integer, db.ForeignKey('orcamentos.id'), nullable=False)
     item_estoque_id = db.Column(db.Integer, db.ForeignKey('estoque.id'), nullable=False)
-    nome_item = db.Column(db.String(255), nullable=False)
     quantidade = db.Column(db.Float, nullable=False)
-    unidade_medida = db.Column(db.String(50), nullable=False)
-    preco_unitario_no_orcamento = db.Column(db.Float, nullable=False) # Preço que foi usado no momento do orçamento
-    subtotal = db.Column(db.Float, nullable=False) # Subtotal do item no orçamento
-    # NOVO CAMPO: Para armazenar o log do cálculo para este item
-    log_calculo = db.Column(db.Text, nullable=True) # Pode ser NULL se não houver log complexo
-
-    # Relacionamento com Estoque (para pegar informações do item)
-    item_estoque = db.relationship('Estoque', backref='itens_orcamento_rel')
+    preco_unitario_praticado = db.Column(db.Float, nullable=False)
+    subtotal = db.Column(db.Float, nullable=False)
+    log_calculo = db.Column(db.Text) # <--- Pode ser nullable=True se for opcional, mas se for enviado deve ser string.
+    item_estoque = db.relationship('Estoque', backref='itens_orcamento_rel') # Adicionado para facilitar o acesso ao nome do item
 
     def serialize(self):
+        nome_item = self.item_estoque.nome if self.item_estoque else None
+        unidade_medida = self.item_estoque.unidade_medida if self.item_estoque else None
         return {
             'id': self.id,
             'orcamento_id': self.orcamento_id,
             'item_estoque_id': self.item_estoque_id,
-            'nome_item': self.nome_item,
+            'nome_item': nome_item, # Adicionado para o frontend
+            'unidade_medida': unidade_medida, # Adicionado para o frontend
             'quantidade': self.quantidade,
-            'unidade_medida': self.unidade_medida,
             'preco_unitario_praticado': self.preco_unitario_praticado,
             'subtotal': self.subtotal,
-            'log_calculo': self.log_calculo # Incluir na serialização
+            'log_calculo': self.log_calculo
         }
 
 
@@ -587,7 +582,7 @@ def delete_marmore(id):
 @jwt_required()
 def get_orcamentos():
     try:
-        orcamentos = Orcamentos.query.all()
+        orcamentos = Orcamento.query.all()
         return jsonify([orcamento.serialize() for orcamento in orcamentos]), 200
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
@@ -596,7 +591,7 @@ def get_orcamentos():
 @jwt_required()
 def get_orcamento(id):
     try:
-        orcamento = Orcamentos.query.get(id)
+        orcamento = Orcamento.query.get(id)
         if not orcamento:
             return jsonify({"erro": "Orçamento não encontrado."}), 404
         return jsonify(orcamento.serialize()), 200
@@ -609,7 +604,7 @@ def create_orcamento():
     data = request.get_json()
     cliente_id = data.get('cliente_id')
     observacoes = data.get('observacoes')
-    itens_orcamento_data = data.get('itens', []) # Lista de itens para o orçamento
+    itens_orcamento_data = data.get('itens', [])
 
     if not cliente_id or not itens_orcamento_data:
         return jsonify({"erro": "Cliente e itens do orçamento são obrigatórios."}), 400
@@ -619,57 +614,74 @@ def create_orcamento():
         if not cliente:
             return jsonify({"erro": "Cliente não encontrado."}), 404
 
-        novo_orcamento = Orcamentos(
+        # Criar o novo_orcamento sem o campo status.
+        # O default='Pendente' no modelo Orcamento cuidará disso.
+        novo_orcamento = Orcamento(
             cliente_id=cliente_id,
             observacoes=observacoes,
-            total_orcamento=0 # Será calculado abaixo
+            total_orcamento=0 # Será calculado abaixo. Importante inicializar com 0 ou um valor válido.
         )
         db.session.add(novo_orcamento)
-        db.session.flush() # Para ter o ID do orçamento antes de adicionar os itens
+        db.session.flush() # Obtém o ID do orçamento antes de adicionar os itens
 
-        total_orcamento_calculado = 0
+        total_final_orcamento = 0
         for item_data in itens_orcamento_data:
             item_estoque_id = item_data.get('item_estoque_id')
             quantidade = item_data.get('quantidade')
             preco_unitario_praticado = item_data.get('preco_unitario_praticado')
-            subtotal = item_data.get('subtotal') # O frontend já pode enviar o subtotal
-            log_calculo = item_data.get('log_calculo') # <--- NOVO: Pegar o log do frontend
+            subtotal = item_data.get('subtotal')
+            log_calculo = item_data.get('log_calculo')
 
-            if not all([item_estoque_id, quantidade, preco_unitario_praticado, subtotal]):
-                db.session.rollback()
-                return jsonify({"erro": "Dados incompletos para um item do orçamento."}), 400
+            # Validações básicas dos itens
+            if not all([item_estoque_id, quantidade is not None, preco_unitario_praticado is not None, subtotal is not None]):
+                raise ValueError("Dados incompletos para um item do orçamento.")
 
+            # Converte para float, garantindo que são números
+            try:
+                quantidade = float(quantidade)
+                preco_unitario_praticado = float(preco_unitario_praticado)
+                subtotal = float(subtotal)
+            except (ValueError, TypeError):
+                raise ValueError("Quantidade, preço ou subtotal de um item são inválidos.")
+
+            # Verifique se o item_estoque_id existe
             item_estoque = Estoque.query.get(item_estoque_id)
             if not item_estoque:
-                db.session.rollback()
-                return jsonify({"erro": f"Item de estoque com ID {item_estoque_id} não encontrado."}), 404
+                raise ValueError(f"Item de estoque com ID {item_estoque_id} não encontrado.")
 
-            novo_item_orcamento = ItensOrcamento(
+            novo_item_orcamento = Itens_Orcamento(
                 orcamento_id=novo_orcamento.id,
                 item_estoque_id=item_estoque_id,
-                nome_item=item_estoque.nome, # Salva o nome do item para referência futura
                 quantidade=quantidade,
-                unidade_medida=item_estoque.unidade_medida,
                 preco_unitario_praticado=preco_unitario_praticado,
                 subtotal=subtotal,
-                log_calculo=log_calculo # <--- ATRIBUIR O LOG AQUI
+                # O log_calculo pode ser uma string vazia ou None se não houver.
+                # Se o campo no DB permitir NULL, None é ok. Se não, use uma string vazia.
+                log_calculo=log_calculo if log_calculo is not None else ''
             )
             db.session.add(novo_item_orcamento)
-            total_orcamento_calculado += subtotal
+            total_final_orcamento += subtotal
 
-        novo_orcamento.total_orcamento = total_orcamento_calculado
+        # Atualiza o total_orcamento do orçamento principal
+        novo_orcamento.total_orcamento = total_final_orcamento
+
         db.session.commit()
         return jsonify(novo_orcamento.serialize()), 201
 
     except IntegrityError as e:
         db.session.rollback()
-        # Tratamento mais específico para erros de integridade (ex: cliente_id inválido)
-        if "Foreign key constraint fails" in str(e):
-             return jsonify({"erro": "Erro de chave estrangeira. Verifique se o cliente existe."}), 400
-        return jsonify({"erro": "Erro de banco de dados: " + str(e)}), 500
+        # Log mais detalhado para erros de integridade do DB
+        print(f"IntegrityError ao criar orçamento: {traceback.format_exc()}")
+        return jsonify({"erro": "Erro de banco de dados ao criar orçamento. Verifique os dados fornecidos."}), 500
+    except ValueError as e:
+        db.session.rollback()
+        # Erros de validação de dados específicos
+        print(f"ValueError ao criar orçamento: {traceback.format_exc()}")
+        return jsonify({"erro": str(e)}), 400
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao criar orçamento: {e}")
+        # Log para qualquer outro erro inesperado
+        print(f"Erro inesperado ao criar orçamento: {traceback.format_exc()}")
         return jsonify({"erro": "Erro interno do servidor ao criar orçamento."}), 500
 
 @app.route('/orcamentos/<int:orcamento_id>', methods=['PUT'])
@@ -681,7 +693,7 @@ def update_orcamento(orcamento_id):
     status = data.get('status') # <--- MANTENHA ESTA LINHA para pegar o status na atualização
 
     try:
-        orcamento = Orcamentos.query.get(orcamento_id)
+        orcamento = Orcamento.query.get(orcamento_id)
         if not orcamento:
             return jsonify({"erro": "Orçamento não encontrado."}), 404
 
@@ -719,7 +731,7 @@ def update_orcamento(orcamento_id):
 
 
             if item_id: # Item existente, atualiza
-                item_orcamento = ItensOrcamento.query.get(item_id)
+                item_orcamento = Itens_Orcamento.query.get(item_id)
                 if item_orcamento:
                     item_orcamento.item_estoque_id = item_estoque_id
                     item_orcamento.quantidade = quantidade
@@ -728,7 +740,7 @@ def update_orcamento(orcamento_id):
                     item_orcamento.log_calculo = log_calculo
                 else:
                     # Isso pode acontecer se o ID do item for inválido, tratar como novo
-                    novo_item = ItensOrcamento(
+                    novo_item = Itens_Orcamento(
                         orcamento_id=orcamento_id,
                         item_estoque_id=item_estoque_id,
                         quantidade=quantidade,
@@ -738,7 +750,7 @@ def update_orcamento(orcamento_id):
                     )
                     db.session.add(novo_item)
             else: # Novo item, adiciona
-                novo_item = ItensOrcamento(
+                novo_item = Itens_Orcamento(
                     orcamento_id=orcamento_id,
                     item_estoque_id=item_estoque_id,
                     quantidade=quantidade,
@@ -768,7 +780,7 @@ def update_orcamento(orcamento_id):
 @jwt_required()
 def delete_orcamento(id):
     try:
-        orcamento = Orcamentos.query.get(id)
+        orcamento = Orcamento.query.get(id)
         if not orcamento:
             return jsonify({"erro": "Orçamento não encontrado."}), 404
 
@@ -782,7 +794,7 @@ def delete_orcamento(id):
 @app.route('/orcamentos/<int:id>/status', methods=['PUT'])
 @jwt_required()
 def update_orcamento_status(id):
-    orcamento = Orcamentos.query.get(id)
+    orcamento = Orcamento.query.get(id)
     if not orcamento:
         return jsonify({"erro": "Orçamento não encontrado."}), 404
 

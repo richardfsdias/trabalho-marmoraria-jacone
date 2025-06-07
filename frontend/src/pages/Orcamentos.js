@@ -167,24 +167,27 @@ function Orcamentos() {
       return;
     }
 
+    // Mapeia os itens do orçamento para o formato esperado pelo backend
+    const itensParaEnvio = itensOrcamento.map(item => ({
+        id: item.id, // Envie o ID do item se for uma atualização de item existente
+        item_estoque_id: item.item_estoque_id,
+        quantidade: parseFloat(item.quantidade), // Garanta que é número
+        preco_unitario_praticado: parseFloat(item.preco_unitario_praticado), // Garanta que é número
+        subtotal: parseFloat(item.subtotal), // Garanta que é número
+        log_calculo: item.log_calculo || '' // Garanta que seja string ou string vazia, não null/undefined
+    }));
+
+
     const orcamentoData = {
       cliente_id: parseInt(clienteSelecionadoId),
       observacoes,
-      itens: itensOrcamento.map(item => ({
-        item_estoque_id: item.item_estoque_id,
-        quantidade: item.quantidade,
-        preco_unitario_praticado: item.preco_unitario_praticado,
-        subtotal: item.subtotal,
-        log_calculo: item.log_calculo
-      })),
-      // Não inclua o status aqui para criação. Ele será 'Pendente' por padrão no backend.
-      // Se for uma atualização, o status será adicionado condicionalmente abaixo.
+      itens: itensParaEnvio, // Use a versão mapeada
     };
 
     try {
       if (editId) {
         // Se estamos EDITANDO, ADICIONE o status ao objeto orcamentoData
-        orcamentoData.status = statusOrcamento; // <--- ADICIONE ESTA LINHA AQUI
+        orcamentoData.status = statusOrcamento; // <--- MANTENHA ESTA LINHA AQUI
         await ApiClient.orcamentos.update(editId, orcamentoData);
         alert('Orçamento atualizado com sucesso!');
       } else {
@@ -196,7 +199,8 @@ function Orcamentos() {
       fetchOrcamentos(); // Recarrega a lista
     } catch (err) {
       console.error('Erro ao salvar orçamento:', err.response ? err.response.data : err);
-      setError(err.response?.data?.erro || 'Erro ao salvar orçamento.');
+      // Exibe a mensagem de erro do backend se disponível
+      setError(err.response?.data?.erro || 'Erro ao salvar orçamento: Verifique os dados informados.');
     }
   };
 
