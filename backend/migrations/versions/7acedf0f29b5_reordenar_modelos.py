@@ -1,8 +1,8 @@
-"""Atualização tentando debbugar Orcamentos.js
+"""Reordenar modelos
 
-Revision ID: dd4d1216d7ca
+Revision ID: 7acedf0f29b5
 Revises: 
-Create Date: 2025-06-07 18:42:51.270941
+Create Date: 2025-06-07 18:57:10.823918
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'dd4d1216d7ca'
+revision = '7acedf0f29b5'
 down_revision = None
 branch_labels = None
 depends_on = None

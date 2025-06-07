@@ -117,7 +117,7 @@ class Clientes(db.Model):
     data_cadastro = db.Column(db.TIMESTAMP, default=db.func.current_timestamp())
 
     def __repr__(self):
-        return f'<Cliente {self.nome}>'
+        return f'<Clientes {self.nome}>'
 
     def to_dict(self):
         return {
@@ -602,22 +602,22 @@ def get_orcamento(id):
 @jwt_required()
 def create_orcamento():
     data = request.get_json()
-    cliente_id = data.get('cliente_id')
+    clientes_id = data.get('clientes_id')
     observacoes = data.get('observacoes')
     itens_orcamento_data = data.get('itens', [])
 
-    if not cliente_id or not itens_orcamento_data:
+    if not clientes_id or not itens_orcamento_data:
         return jsonify({"erro": "Cliente e itens do orçamento são obrigatórios."}), 400
 
     try:
-        cliente = Clientes.query.get(cliente_id)
+        cliente = Clientes.query.get(clientes_id)
         if not cliente:
             return jsonify({"erro": "Cliente não encontrado."}), 404
 
         # Criar o novo_orcamento sem o campo status.
         # O default='Pendente' no modelo Orcamento cuidará disso.
         novo_orcamento = Orcamento(
-            cliente_id=cliente_id,
+            cliente_id=clientes_id,
             observacoes=observacoes,
             total_orcamento=0 # Será calculado abaixo. Importante inicializar com 0 ou um valor válido.
         )
