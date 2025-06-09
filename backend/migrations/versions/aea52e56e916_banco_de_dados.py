@@ -1,8 +1,8 @@
-"""PORFAVOR VAI
+"""Banco de Dados
 
-Revision ID: a27628640ed8
+Revision ID: aea52e56e916
 Revises: 
-Create Date: 2025-06-07 19:23:41.009786
+Create Date: 2025-06-09 20:11:58.421118
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'a27628640ed8'
+revision = 'aea52e56e916'
 down_revision = None
 branch_labels = None
 depends_on = None

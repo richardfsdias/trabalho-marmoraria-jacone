@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -- coding: utf-8 --
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -70,7 +70,7 @@ def user_lookup_callback(_jwt_header, jwt_data):
 
 # Modelos do Banco de Dados
 class Marmores(db.Model):
-    __tablename__ = 'marmores'
+    _tablename_ = 'marmores'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     nome = db.Column(db.String(100), nullable=False)
     preco_m2 = db.Column(db.Numeric(10, 2), nullable=False)
@@ -91,7 +91,7 @@ class Funcionarios(db.Model):
     senha_hash = db.Column(db.String(255), nullable=False)
     cpf = db.Column(db.String(11), unique=True, nullable=False)
 
-    def __repr__(self):
+    def _repr_(self):
         return f'<Funcionario {self.nome}>'
 
     def set_password(self, password):
@@ -119,7 +119,7 @@ class Clientes(db.Model):
     # Esta linha define a "outra metade" da relação, ligando de volta ao campo 'cliente' em Orcamentos.
     orcamentos_rel = db.relationship('Orcamentos', back_populates='cliente', lazy=True)
 
-    def __repr__(self):
+    def _repr_(self):
         return f'<Cliente {self.nome}>'
 
     def to_dict(self):
@@ -194,7 +194,7 @@ class Entregas(db.Model):
         }
 
 class Estoque(db.Model):
-    __tablename__ = 'estoque'
+    _tablename_ = 'estoque'
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
     quantidade = db.Column(db.Float, nullable=False)
@@ -237,7 +237,7 @@ class Movimentacoes_Estoque(db.Model):
         }
     
 class Orcamentos(db.Model):
-    __tablename__ = 'orcamentos'
+    _tablename_ = 'orcamentos'
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
     data_criacao = db.Column(db.DateTime, default=db.func.current_timestamp())
@@ -266,7 +266,7 @@ class Orcamentos(db.Model):
         }
 
 class ItensOrcamento(db.Model):
-    __tablename__ = 'itens_orcamento'
+    _tablename_ = 'itens_orcamento'
     id = db.Column(db.Integer, primary_key=True)
     orcamento_id = db.Column(db.Integer, db.ForeignKey('orcamentos.id'), nullable=False)
     item_estoque_id = db.Column(db.Integer, db.ForeignKey('estoque.id'), nullable=False)
@@ -301,18 +301,11 @@ def login():
     email = request.json.get('email', None)
     senha = request.json.get('senha', None)
 
-    # 1. Busca o funcionário pelo email
     funcionario = Funcionarios.query.filter_by(email=email).first()
 
-    # 2. Verifica se o funcionário com aquele email foi encontrado
-    if not funcionario:
-        return jsonify({"erro": "Funcionário com este email não encontrado."}), 404 # Mensagem específica e status 404 Not Found
+    if not funcionario or not funcionario.check_password(senha):
+        return jsonify({"erro": "Email ou senha inválidos"}), 401
 
-    # 3. Se o funcionário existe, agora sim, verifica a senha
-    if not funcionario.check_password(senha):
-        return jsonify({"erro": "Senha incorreta. Por favor, tente novamente."}), 401 # Mensagem específica e status 401 Unauthorized
-
-    # 4. Se tudo estiver correto, cria o token
     access_token = create_access_token(identity=funcionario.id)
     print(f"DEBUG FLASK - Token de acesso criado para o funcionário ID: {funcionario.id}")
     return jsonify(access_token=access_token), 200
@@ -851,6 +844,7 @@ def update_estoque_item(item_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'erro': str(e)}), 500
+    
 @app.route('/estoque/<int:item_id>', methods=['DELETE'])
 @jwt_required()
 def delete_estoque(item_id):
@@ -860,17 +854,26 @@ def delete_estoque(item_id):
         if not item_estoque:
             return jsonify({"erro": "Item de estoque não encontrado."}), 404
 
+        # UPDATED: Delete related quote items first
+        itens_orcamento_relacionados = ItensOrcamento.query.filter_by(item_estoque_id=item_id).all()
+        for item in itens_orcamento_relacionados:
+            db.session.delete(item)
+
+        # Delete related stock movements
         movimentacoes_relacionadas = Movimentacoes_Estoque.query.filter_by(item_id=item_id).all()
         for mov in movimentacoes_relacionadas:
             db.session.delete(mov)
-
+        
+        # Now, delete the stock item itself
         db.session.delete(item_estoque)
         db.session.commit()
-        return jsonify({"mensagem": "Item de estoque e suas movimentações relacionadas excluídos com sucesso."}), 200
+        return jsonify({"mensagem": "Item de estoque e suas dependências foram excluídos com sucesso."}), 200
     except Exception as e:
         db.session.rollback()
-        print(f"Erro ao excluir item de estoque: {e}")
-        return jsonify({"erro": str(e)}), 500
+        # Imprime o erro no console do backend para depuração
+        print(f"Erro ao excluir item de estoque: {e}") 
+        return jsonify({"erro": f"Erro de banco de dados ao excluir o item. Detalhes: {str(e)}"}), 500
+    
 @app.route('/movimentacoes_estoque', methods=['GET'])
 @jwt_required()
 def get_movimentacoes_estoque():
@@ -918,7 +921,7 @@ def add_movimentacao_estoque():
         db.session.rollback()
         return jsonify({"erro": str(e)}), 500
 
-if __name__ == '__main__':
+if __name__ == '_main_':
     with app.app_context():
         db.create_all()
     app.run(debug=True, host='0.0.0.0', port=5000)
