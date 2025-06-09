@@ -18,6 +18,8 @@ function Orcamentos() {
   // Estados para o formulário de adição de item ao orçamento
   const [materialSelecionadoCalc, setMaterialSelecionadoCalc] = useState('');
   const [quantidadeCalc, setQuantidadeCalc] = useState('');
+  const [alturaCalc, setAlturaCalc] = useState(''); // NOVO ESTADO
+  const [larguraCalc, setLarguraCalc] = useState(''); // NOVO ESTADO
   const [editandoItemOrcamentoId, setEditandoItemOrcamentoId] = useState(null); // ID temporário do item sendo editado na lista de itens
 
   // Estados para filtros
@@ -83,6 +85,21 @@ function Orcamentos() {
     fetchClientes();
     fetchMateriais();
   }, [fetchOrcamentos, fetchClientes, fetchMateriais]);
+  
+  // useEffect para calcular a quantidade automaticamente a partir da altura e largura
+  useEffect(() => {
+    const material = materiais.find(m => m.id === parseInt(materialSelecionadoCalc));
+    if (material && material.unidade_medida === 'm²') {
+        const altura = parseFloat(alturaCalc);
+        const largura = parseFloat(larguraCalc);
+
+        if (altura > 0 && largura > 0) {
+            const area = altura * largura;
+            setQuantidadeCalc(area.toFixed(4)); // Arredonda para 4 casas decimais para precisão
+        }
+    }
+  }, [alturaCalc, larguraCalc, materialSelecionadoCalc, materiais]);
+
 
   // Função para adicionar/atualizar item no array de itens do orçamento (no formulário)
   const handleAdicionarItemOrcamento = useCallback(() => {
@@ -102,24 +119,20 @@ function Orcamentos() {
     let subtotalCalculado;
     let logCalculoStr = '';
 
-    // Lógica de cálculo e geração do log (adapte conforme seus cálculos reais)
+    // Lógica de cálculo e geração do log APRIMORADA
     if (materialDetalhes.unidade_medida === 'm²') {
       subtotalCalculado = quantidadeFloat * precoUnitario;
-      logCalculoStr = `Cálculo (m²): ${quantidadeFloat} m² * ${formatCurrency(precoUnitario)}/m² = ${formatCurrency(subtotalCalculado)}`;
-    } else if (materialDetalhes.unidade_medida === 'm linear') {
+      const altura = parseFloat(alturaCalc) || null;
+      const largura = parseFloat(larguraCalc) || null;
+      // Gera um log mais detalhado se altura e largura foram usados
+      if (altura && largura) {
+        logCalculoStr = `Cálculo (m²): ${altura.toFixed(2)}m (altura) * ${largura.toFixed(2)}m (largura) = ${quantidadeFloat.toFixed(2)} m².\nTotal: ${quantidadeFloat.toFixed(2)} m² * ${formatCurrency(precoUnitario)}/m² = ${formatCurrency(subtotalCalculado)}`;
+      } else {
+        logCalculoStr = `Cálculo (m²): ${quantidadeFloat} m² * ${formatCurrency(precoUnitario)}/m² = ${formatCurrency(subtotalCalculado)}`;
+      }
+    } else { // Lógica para outras unidades de medida (permanece a mesma)
       subtotalCalculado = quantidadeFloat * precoUnitario;
-      logCalculoStr = `Cálculo (m linear): ${quantidadeFloat} m linear * ${formatCurrency(precoUnitario)}/m linear = ${formatCurrency(subtotalCalculado)}`;
-    } else if (materialDetalhes.unidade_medida === 'peça') {
-      subtotalCalculado = quantidadeFloat * precoUnitario;
-      logCalculoStr = `Cálculo (peça): ${quantidadeFloat} peça(s) * ${formatCurrency(precoUnitario)}/peça = ${formatCurrency(subtotalCalculado)}`;
-    } else if (materialDetalhes.unidade_medida === 'kg') {
-        subtotalCalculado = quantidadeFloat * precoUnitario;
-        logCalculoStr = `Cálculo (kg): ${quantidadeFloat} kg * ${formatCurrency(precoUnitario)}/kg = ${formatCurrency(subtotalCalculado)}`;
-    }
-    else {
-      // Cálculo padrão para "unidade" ou outros
-      subtotalCalculado = quantidadeFloat * precoUnitario;
-      logCalculoStr = `Cálculo (unidade): ${quantidadeFloat} unidades * ${formatCurrency(precoUnitario)}/unidade = ${formatCurrency(subtotalCalculado)}`;
+      logCalculoStr = `Cálculo (${materialDetalhes.unidade_medida}): ${quantidadeFloat} ${materialDetalhes.unidade_medida}(s) * ${formatCurrency(precoUnitario)}/unidade = ${formatCurrency(subtotalCalculado)}`;
     }
 
     const novoItem = {
@@ -129,7 +142,7 @@ function Orcamentos() {
       unidade_medida: materialDetalhes.unidade_medida,
       preco_unitario_praticado: precoUnitario,
       subtotal: subtotalCalculado,
-      log_calculo: logCalculoStr // O log de cálculo!
+      log_calculo: logCalculoStr,
     };
 
     if (editandoItemOrcamentoId !== null) {
@@ -140,13 +153,16 @@ function Orcamentos() {
       );
       setEditandoItemOrcamentoId(null);
     } else {
-      setItensOrcamento(prevItens => [...prevItens, { ...novoItem, id: Date.now() }]); // ID temporário para React key
+      setItensOrcamento(prevItens => [...prevItens, { ...novoItem, id: Date.now() }]);
     }
 
-    // Resetar campos de adição de item
+    // Resetar campos de adição de item, incluindo altura e largura
     setMaterialSelecionadoCalc('');
     setQuantidadeCalc('');
-  }, [materialSelecionadoCalc, quantidadeCalc, materiais, editandoItemOrcamentoId, formatCurrency]);
+    setAlturaCalc('');
+    setLarguraCalc('');
+
+  }, [materialSelecionadoCalc, quantidadeCalc, alturaCalc, larguraCalc, materiais, editandoItemOrcamentoId, formatCurrency]);
 
   const handleRemoverItemOrcamento = useCallback((idToRemove) => {
     setItensOrcamento(prevItens => prevItens.filter(item => item.id !== idToRemove));
@@ -269,6 +285,8 @@ function Orcamentos() {
     setItensOrcamento([]);
     setMaterialSelecionadoCalc('');
     setQuantidadeCalc('');
+    setAlturaCalc('');
+    setLarguraCalc('');
     setEditandoItemOrcamentoId(null);
     setStatusOrcamento('Pendente');
     setError('');
@@ -340,8 +358,41 @@ function Orcamentos() {
                     ))}
                   </select>
                 </div>
+                
+                {materiais.find(m => m.id === parseInt(materialSelecionadoCalc))?.unidade_medida === 'm²' && (
+                  <div className="row">
+                      <div className="col-md-6 mb-3">
+                          <label htmlFor="alturaCalc" className="form-label">Altura (m)</label>
+                          <input
+                              type="number"
+                              step="0.01"
+                              className="form-control"
+                              id="alturaCalc"
+                              placeholder="Ex: 0.60"
+                              value={alturaCalc}
+                              onChange={(e) => setAlturaCalc(e.target.value)}
+                          />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                          <label htmlFor="larguraCalc" className="form-label">Largura (m)</label>
+                          <input
+                              type="number"
+                              step="0.01"
+                              className="form-control"
+                              id="larguraCalc"
+                              placeholder="Ex: 1.20"
+                              value={larguraCalc}
+                              onChange={(e) => setLarguraCalc(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                )}
+
                 <div className="mb-3">
-                  <label htmlFor="quantidadeCalc" className="form-label">Quantidade</label>
+                  <label htmlFor="quantidadeCalc" className="form-label">
+                    Quantidade 
+                    {materiais.find(m => m.id === parseInt(materialSelecionadoCalc))?.unidade_medida === 'm²' && ' (m²)'}
+                  </label>
                   <input
                     type="number"
                     step="0.01"
@@ -349,6 +400,7 @@ function Orcamentos() {
                     id="quantidadeCalc"
                     value={quantidadeCalc}
                     onChange={(e) => setQuantidadeCalc(e.target.value)}
+                    readOnly={materiais.find(m => m.id === parseInt(materialSelecionadoCalc))?.unidade_medida === 'm²' && alturaCalc > 0 && larguraCalc > 0}
                   />
                 </div>
                 <button

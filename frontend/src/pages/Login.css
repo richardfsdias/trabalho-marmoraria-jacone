@@ -63,3 +63,9 @@
 .form-label{
   margin-bottom: 0rem;
 }
+
+.error-message {
+  color: red;
+  margin-top: 10px;
+  text-align: center;
+}

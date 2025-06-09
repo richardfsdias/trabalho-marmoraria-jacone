@@ -301,11 +301,18 @@ def login():
     email = request.json.get('email', None)
     senha = request.json.get('senha', None)
 
+    # 1. Busca o funcionário pelo email
     funcionario = Funcionarios.query.filter_by(email=email).first()
 
-    if not funcionario or not funcionario.check_password(senha):
-        return jsonify({"erro": "Email ou senha inválidos"}), 401
+    # 2. Verifica se o funcionário com aquele email foi encontrado
+    if not funcionario:
+        return jsonify({"erro": "Funcionário com este email não encontrado."}), 404 # Mensagem específica e status 404 Not Found
 
+    # 3. Se o funcionário existe, agora sim, verifica a senha
+    if not funcionario.check_password(senha):
+        return jsonify({"erro": "Senha incorreta. Por favor, tente novamente."}), 401 # Mensagem específica e status 401 Unauthorized
+
+    # 4. Se tudo estiver correto, cria o token
     access_token = create_access_token(identity=funcionario.id)
     print(f"DEBUG FLASK - Token de acesso criado para o funcionário ID: {funcionario.id}")
     return jsonify(access_token=access_token), 200
